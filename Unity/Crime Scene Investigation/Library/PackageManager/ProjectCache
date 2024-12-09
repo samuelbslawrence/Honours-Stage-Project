@@ -5,16 +5,16 @@ m_ProjectFiles:
     m_ContentTrackingEnabled: 1
     m_ModificationDate:
       serializedVersion: 2
-      ticks: 638693477278870222
-    m_Hash: 2155921774
+      ticks: 638693505852337434
+    m_Hash: 2876183367
   m_LockFileStatus:
     m_FilePath: C:/Honours Stage Project/Unity/Crime Scene Investigation/Packages/packages-lock.json
     m_PathExists: 1
     m_ContentTrackingEnabled: 1
     m_ModificationDate:
       serializedVersion: 2
-      ticks: 638693477278908705
-    m_Hash: 1820260118
+      ticks: 638693505852392633
+    m_Hash: 2940332299
 m_EmbeddedPackageManifests:
   m_ManifestsStatus: {}
 m_LocalPackages:
@@ -306,12 +306,104 @@ m_ResolvedPackages:
   upmReserved: '{"quickstart":"https://docs.unity3d.com/2021.2/Documentation/Manual/DeveloperToolsFeature.html"}'
   assetStore:
     productId: 
-- packageId: com.unity.timeline@1.8.6
+- packageId: com.unity.mobile.android-logcat@1.4.3
   testable: 0
   isDirectDependency: 1
-  version: 1.8.6
+  version: 1.4.3
   source: 1
-  resolvedPath: C:\Honours Stage Project\Unity\Crime Scene Investigation\Library\PackageCache\com.unity.timeline@1.8.6
+  resolvedPath: C:\Honours Stage Project\Unity\Crime Scene Investigation\Library\PackageCache\com.unity.mobile.android-logcat@1.4.3
+  assetPath: Packages/com.unity.mobile.android-logcat
+  name: com.unity.mobile.android-logcat
+  displayName: Android Logcat
+  author:
+    name: 
+    email: 
+    url: 
+  category: 
+  type: 
+  description: "Android Logcat package provides support for:\n - Android log messages\n
+    - Android application memory statistics\n - Input injection\n - Android Screen
+    Capture\n - Android Screen Recorder\n - Stacktrace Utility\n\nClick the 'View
+    documentation' link above for more information.\n\nThe window can be accessed
+    in Unity Editor via 'Window > Analysis > Android Logcat', or simply by pressing
+    'Alt+6' on Windows or 'Option+6' on macOS. \n\nMake sure to have Android module
+    loaded and switch to Android build target in 'Build Settings' window if the menu
+    doesn't exist."
+  errors: []
+  versions:
+    all:
+    - 0.1.5-preview
+    - 0.2.7-preview
+    - 1.0.0
+    - 1.0.1-preview
+    - 1.0.3-preview
+    - 1.1.0
+    - 1.1.1
+    - 1.2.0-preview
+    - 1.2.0
+    - 1.2.1
+    - 1.2.2
+    - 1.2.3
+    - 1.3.2
+    - 1.4.0
+    - 1.4.1
+    - 1.4.2
+    - 1.4.3
+    compatible:
+    - 1.4.1
+    - 1.4.2
+    - 1.4.3
+    recommended: 1.4.3
+    deprecated: []
+  dependencies: []
+  resolvedDependencies: []
+  keywords:
+  - Mobile
+  - Android
+  - Logcat
+  registry:
+    id: main
+    name: 
+    url: https://packages.unity.com
+    scopes: []
+    isDefault: 1
+    capabilities: 7
+    configSource: 0
+  hideInEditor: 1
+  entitlements:
+    licensingModel: 1
+  isAssetStorePackage: 0
+  datePublishedTicks: 638616524392130000
+  documentationUrl: https://docs.unity3d.com/Packages/com.unity.mobile.android-logcat@1.4/manual/index.html
+  hasRepository: 1
+  repository:
+    type: git
+    url: https://github.com/Unity-Technologies/com.unity.mobile.logcat.git
+    revision: dbddf951bd5d17fbd9405673bb238aec8cba201e
+    path: 
+  unityLifecycle:
+    version: 1.4.1
+    nextVersion: 
+    recommendedVersion: 
+    isDeprecated: 0
+    deprecationMessage: 
+  isDeprecated: 0
+  deprecationMessage: 
+  git:
+    hash: 
+    revision: 
+  upmReserved: '{"changelog":"### Fixes & Improvements\n - Fix Screen Capture window
+    not saving last image/video save location correctly between Unity domain reloads
+    or launches, previously it would always reset to Unity project directory.\n -
+    Fix compatability issues with future Unity versions."}'
+  assetStore:
+    productId: 
+- packageId: com.unity.timeline@1.8.7
+  testable: 0
+  isDirectDependency: 1
+  version: 1.8.7
+  source: 1
+  resolvedPath: C:\Honours Stage Project\Unity\Crime Scene Investigation\Library\PackageCache\com.unity.timeline@1.8.7
   assetPath: Packages/com.unity.timeline
   name: com.unity.timeline
   displayName: Timeline
@@ -453,13 +545,13 @@ m_ResolvedPackages:
   entitlements:
     licensingModel: 1
   isAssetStorePackage: 0
-  datePublishedTicks: 638326112870000000
+  datePublishedTicks: 638524833900000000
   documentationUrl: https://docs.unity3d.com/Packages/com.unity.timeline@1.8/manual/index.html
   hasRepository: 1
   repository:
     type: git
     url: https://github.cds.internal.unity3d.com/unity/com.unity.timeline.git
-    revision: 9b8cc7590b7d733181284f1a846a02406b5524d8
+    revision: d6432ca638481c3d0e4c01f87f9cdbe3c4b1d529
     path: 
   unityLifecycle:
     version: 1.8.6
@@ -472,14 +564,17 @@ m_ResolvedPackages:
   git:
     hash: 
     revision: 
-  upmReserved: '{"changelog":"### Changed\n\n- In the `Create Asset` menu, the `Signal`
-    and `Timeline` items have been moved to the `Timeline` submenu.\n\n### Fixed\n\n-
-    Fixed issue where changing the name of a group track was not undoable ([TB-218](https://issuetracker.unity3d.com/issues/timeline-track-group-renaming-doesnt-go-into-the-undo-history)).\n-
-    Fixed issue where a warning would be logged in the console for `TrackAsset` ([TB-229](https://issuetracker.unity3d.com/product/unity/issues/guid/TB-229)).\n-
-    Fixed performance regression when rebuilding the playable graph.\n- Fixed a `MissingReferenceException`
-    when editing a Timeline that is an instance of a prefab and a bound `Animator`
-    is destroyed ([TB-222](https://issuetracker.unity3d.com/issues/timeline-missingreferenceexceptions-when-undoing-add-animator-from-timeline))\n-
-    Removed warnings due to obsolete analytics API."}'
+  upmReserved: '{"changelog":"### Added\n\n- Released ronl-workflow-custom-marker.md
+    Added a new workflow to the Timeline Workflows documentation:\n- Released ronl-workflow-custom-marker.md
+    The `Create a custom Notes marker` workflow demonstrates how to create a custom
+    marker for adding notes to Timeline instances. This workflow also demonstrates
+    how to change the default appearance of a custom marker with scripting and a
+    Unity Style Sheet (USS).\n\n### Fixed\n\n- Fixed bug where using , and . (<>)
+    to step frames in the Animation Window while the Timeline Window was linked would
+    sometimes not work. [IN-56667](https://unity3d.atlassian.net/servicedesk/customer/portal/2/IN-56667)\n-
+    When the Timeline and Animation windows are linked and the Timeline Window is
+    active, moving the playhead in the Timeline Window will cause the animation window
+    to repaint immediately."}'
   assetStore:
     productId: 
 - packageId: com.unity.ugui@2.0.0
