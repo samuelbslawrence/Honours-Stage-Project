@@ -1,0 +1,11 @@
+# ninja log v5
+55	268	7555532450806045	FramePacing/CMakeFiles/swappywrapper.dir/UnitySwappyWrapper.cpp.o	42af4c9c3e369bb7
+270	588	7555532453353013	C:/Honours Stage Project/Unity/Crime Scene Investigation/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/6v52633m/obj/arm64-v8a/libswappywrapper.so	556be70289bd5566
+16	827	7555532456369045	GameActivity/CMakeFiles/game.dir/UGAInputKeyEvent.cpp.o	7b0ffacebde8c123
+22	848	7555532456594912	GameActivity/CMakeFiles/game.dir/UGAEntry.cpp.o	165817b8e04615b6
+46	870	7555532456819522	GameActivity/CMakeFiles/game.dir/UGAInputMotionEvent.cpp.o	f6127480a6db3d92
+37	906	7555532457173217	GameActivity/CMakeFiles/game.dir/UGASoftKeyboard.cpp.o	84485c122caa5080
+9	951	7555532457620842	GameActivity/CMakeFiles/game.dir/UGADebug.cpp.o	2111f0331b27de66
+29	1078	7555532458881283	GameActivity/CMakeFiles/game.dir/UGAInput.cpp.o	c3c2ed07950a086d
+2	1133	7555532459401752	GameActivity/CMakeFiles/game.dir/UGAApplication.cpp.o	8f4b341ab04f2862
+1134	1386	7555532461373643	C:/Honours Stage Project/Unity/Crime Scene Investigation/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/6v52633m/obj/arm64-v8a/libgame.so	c3b03ad5bc65a47a
