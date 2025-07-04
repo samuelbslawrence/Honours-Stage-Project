@@ -3,15 +3,15 @@ using UnityEngine.SceneManagement;
 
 public class MenuActions : MonoBehaviour
 {
-    public void StartInvestigation()
-    {
-        // Replace the scene to start the investigation
-        SceneManager.LoadScene("InvestigationScene");
-    }
+  public void StartInvestigation()
+  {
+    // Replace the scene to start the investigation
+    SceneManager.LoadScene("Roling");
+  }
 
-    public void QuitApplication()
-    {
-        // Exit the application
-        Application.Quit();
-    }
+  public void QuitApplication()
+  {
+    // Exit the application
+    Application.Quit();
+  }
 }
