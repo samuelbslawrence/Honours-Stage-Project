@@ -1,12 +1,12 @@
 ﻿/*
  * CrimeSceneGenerator - Evidence Spawning System
+ * MODIFIED: Removed all random positioning - uses only fixed spawn point locations
  * 
- * NEW ORIGIN-BASED POSITIONING SYSTEM:
- * - Uses "orgin" child objects in evidence prefabs as positioning reference
- * - Simplified spawn position calculation using spawn points + small random offset
- * - Evidence prefabs should have an "orgin" empty GameObject positioned at the desired contact point
- * - The system positions the evidence so the "orgin" child aligns with the target spawn position
- * - Fallback to direct positioning if no "orgin" child is found
+ * FIXED POSITIONING SYSTEM:
+ * - Uses exact spawn point positions with NO random offsets
+ * - Evidence spawns precisely at the Transform position of spawn point empties
+ * - No fallback random positioning - logs warnings instead
+ * - Deterministic evidence placement for consistent results
  */
 
 using System.Collections;
@@ -261,9 +261,8 @@ public class CrimeSceneGenerator : MonoBehaviour
   [Header("Generation Settings")]
   public bool generateOnStart = true;
   public bool clearPreviousScene = true;
-  [Range(0.1f, 1.0f)]
-  public float spawnRadius = 0.3f;
-  public float tableHeightOffset = 1.0f;
+  // REMOVED: spawnRadius - no longer needed since we use exact positions
+  public float tableHeightOffset = 0.0f;
 
   [Header("Real-Time Integration")]
   public bool enableRealTimeNotifications = true;
@@ -709,7 +708,17 @@ public class CrimeSceneGenerator : MonoBehaviour
       }
     }
 
-    return validPoints.ToArray();
+    // FILTER OUT INACTIVE SPAWN POINTS - This fixes the bug where evidence spawns on hidden tables
+    List<Transform> activeValidPoints = new List<Transform>();
+    foreach (Transform point in validPoints)
+    {
+      if (point != null && point.gameObject.activeInHierarchy)
+      {
+        activeValidPoints.Add(point);
+      }
+    }
+
+    return activeValidPoints.ToArray();
   }
 
   // PUBLIC API
@@ -980,7 +989,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     evidenceSpawnLocations = locationsList.ToArray();
   }
 
-  [ContextMenu("🧹 Clean All Arrays")]
+  [ContextMenu("Clean All Arrays")]
   private void CleanAllArrays()
   {
     CleanupEvidenceArrays();
@@ -1099,58 +1108,6 @@ public class CrimeSceneGenerator : MonoBehaviour
     }
   }
 
-  [ContextMenu("Create Emergency Floor Spawn Points")]
-  private void CreateEmergencyFloorSpawnPoints()
-  {
-    if (!Application.isPlaying)
-    {
-      return;
-    }
-
-    List<Transform> emergencyPoints = new List<Transform>();
-    Vector3 basePos = transform.position;
-
-    for (int i = 0; i < 8; i++)
-    {
-      float angle = i * 45f * Mathf.Deg2Rad;
-      Vector3 spawnPos = basePos + new Vector3(Mathf.Cos(angle) * 3f, 0, Mathf.Sin(angle) * 3f);
-
-      GameObject spawnPoint = new GameObject($"Emergency_FloorSpawn_{i}");
-      spawnPoint.transform.position = spawnPos;
-      emergencyPoints.Add(spawnPoint.transform);
-    }
-
-    if (floorSpawnPoints == null || floorSpawnPoints.Length == 0)
-    {
-      floorSpawnPoints = emergencyPoints.ToArray();
-    }
-
-    if (enableLocationSelection && isLocationDecided)
-    {
-      switch (currentLocation)
-      {
-        case CurrentLocation.Bar:
-          if (barFloorSpawnPoints == null || barFloorSpawnPoints.Length == 0)
-          {
-            barFloorSpawnPoints = emergencyPoints.ToArray();
-          }
-          break;
-        case CurrentLocation.Office:
-          if (officeFloorSpawnPoints == null || officeFloorSpawnPoints.Length == 0)
-          {
-            officeFloorSpawnPoints = emergencyPoints.ToArray();
-          }
-          break;
-        case CurrentLocation.Home:
-          if (homeFloorSpawnPoints == null || homeFloorSpawnPoints.Length == 0)
-          {
-            homeFloorSpawnPoints = emergencyPoints.ToArray();
-          }
-          break;
-      }
-    }
-  }
-
   private IEnumerator NotifySystemsAfterGeneration()
   {
     yield return new WaitForEndOfFrame();
@@ -1220,6 +1177,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     }
   }
 
+  // MODIFIED SPAWN EVIDENCE METHOD - FIXED POSITIONING ONLY WITH WARNING INSTEAD OF ERROR
   void SpawnEvidence(int evidenceIndex)
   {
     if (evidenceIndex >= evidencePrefabs.Length || evidencePrefabs[evidenceIndex] == null)
@@ -1227,35 +1185,34 @@ public class CrimeSceneGenerator : MonoBehaviour
 
     Transform[] spawnPoints = GetAppropriateSpawnPoints(evidenceIndex);
 
+    Vector3 targetPosition;
+    Transform selectedSpawnPoint = null;
+
     if (spawnPoints.Length == 0)
     {
-      return;
+      Debug.LogWarning($"NO SPAWN POINTS FOUND for {evidenceNames[evidenceIndex]}! Skipping evidence spawn - please add spawn points.");
+      return; // Skip this evidence and continue with others
     }
 
-    Transform selectedSpawnPoint = spawnPoints[randomizer.Next(spawnPoints.Length)];
+    // Select a spawn point (still random selection, but exact positioning)
+    selectedSpawnPoint = spawnPoints[randomizer.Next(spawnPoints.Length)];
 
     if (selectedSpawnPoint == null)
     {
-      return;
+      Debug.LogWarning($"SELECTED SPAWN POINT IS NULL for {evidenceNames[evidenceIndex]}! Skipping evidence spawn.");
+      return; // Skip this evidence and continue with others
     }
 
-    // Get target position: spawn point + small random offset
-    Vector3 spawnPointPos = selectedSpawnPoint.position;
-    Vector2 randomOffset = Random.insideUnitCircle * spawnRadius;
-
-    Vector3 targetPosition = new Vector3(
-      spawnPointPos.x + randomOffset.x,
-      spawnPointPos.y,
-      spawnPointPos.z + randomOffset.y
-    );
+    // USE EXACT SPAWN POINT POSITION - NO RANDOM OFFSET
+    targetPosition = selectedSpawnPoint.position;
 
     // Instantiate evidence prefab
     GameObject spawnedEvidence = Instantiate(evidencePrefabs[evidenceIndex], Vector3.zero, Quaternion.identity);
 
-    // Position the evidence using the origin child
+    // Position the evidence exactly at the spawn point
     PositionEvidenceUsingOrigin(spawnedEvidence, targetPosition);
 
-    // Rotate evidence randomly on Y-axis
+    // Rotate evidence randomly on Y-axis (only rotation randomness, not position)
     spawnedEvidence.transform.Rotate(0, randomizer.Next(0, 360), 0);
 
     spawnedObjects.Add(spawnedEvidence);
@@ -1270,53 +1227,22 @@ public class CrimeSceneGenerator : MonoBehaviour
     currentSceneEvidenceObjects.Add(spawnedEvidence);
 
     // EVIDENCE SPAWN COORDINATES LOGGING
-    Debug.Log($"[EVIDENCE SPAWN] {evidenceName}");
+    Debug.Log($"[EVIDENCE SPAWN - FIXED POSITION] {evidenceName}");
     Debug.Log($"  Spawn Point: {selectedSpawnPoint.name} at {selectedSpawnPoint.position}");
     Debug.Log($"  Target Position: {targetPosition}");
     Debug.Log($"  Final Evidence Position: {spawnedEvidence.transform.position}");
-    
-    // Check if evidence has origin and log its position
-    Transform orgin = spawnedEvidence.transform.Find("orgin");
-    if (orgin == null) orgin = spawnedEvidence.transform.Find("origin");
-    
-    if (orgin != null)
-    {
-      Debug.Log($"  Origin Position: {orgin.position}");
-    }
-    else
-    {
-      Debug.Log($"  Origin: Not found (using direct positioning)");
-    }
+    Debug.Log($"  NO RANDOM OFFSET APPLIED - EXACT POSITIONING");
   }
 
+  // SIMPLIFIED POSITIONING METHOD
   void PositionEvidenceUsingOrigin(GameObject evidenceObject, Vector3 targetPosition)
   {
     if (evidenceObject == null) return;
 
-    // Look for the "orgin" child object
-    Transform originTransform = evidenceObject.transform.Find("orgin");
+    // Position evidence directly at the exact spawn point position
+    evidenceObject.transform.position = targetPosition;
 
-    // Also try "origin" in case the spelling gets fixed
-    if (originTransform == null)
-    {
-      originTransform = evidenceObject.transform.Find("origin");
-    }
-
-    if (originTransform != null)
-    {
-      // Get the origin's local position relative to the evidence root
-      Vector3 originLocalPosition = originTransform.localPosition;
-
-      // Position the evidence root so that the origin ends up at the target position
-      // Target = EvidenceRoot + OriginLocal
-      // Therefore: EvidenceRoot = Target - OriginLocal
-      evidenceObject.transform.position = targetPosition - originLocalPosition;
-    }
-    else
-    {
-      // Fallback: no origin found, position evidence root directly
-      evidenceObject.transform.position = targetPosition;
-    }
+    Debug.Log($"Positioned {evidenceObject.name} exactly at {targetPosition}");
   }
 
   Transform[] GetAppropriateSpawnPoints(int evidenceIndex)
@@ -1379,7 +1305,22 @@ public class CrimeSceneGenerator : MonoBehaviour
       }
     }
 
-    return validPoints.ToArray();
+    // FILTER OUT INACTIVE SPAWN POINTS - This fixes the bug where evidence spawns on hidden tables
+    List<Transform> activeValidPoints = new List<Transform>();
+    foreach (Transform point in validPoints)
+    {
+      if (point != null && point.gameObject.activeInHierarchy)
+      {
+        activeValidPoints.Add(point);
+      }
+    }
+
+    if (activeValidPoints.Count == 0 && validPoints.Count > 0)
+    {
+      Debug.LogWarning($"All spawn points for {location} are inactive! Evidence cannot spawn properly for {evidenceNames[evidenceIndex]}");
+    }
+
+    return activeValidPoints.ToArray();
   }
 
   [ContextMenu("Clear Scene")]

@@ -3,9 +3,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
-#if UNITY_EDITOR
-using UnityEditor;
-#endif
 
 public class EvidenceChecklist : MonoBehaviour
 {
@@ -17,10 +14,19 @@ public class EvidenceChecklist : MonoBehaviour
   [SerializeField] private KeyCode toggleKey = KeyCode.Tab;
   [SerializeField] private CameraScript cameraScript;
 
+  [Header("Cross-Script Communication")]
+  [SerializeField] private ToolSpawner toolSpawner;
+  [SerializeField] private bool autoFindToolSpawner = true;
+  [SerializeField] private bool notifyToolSpawnerOnToggle = true;
+
+  [Header("Mystery Mode")]
+  [SerializeField] private bool enableMysteryMode = true;
+  [SerializeField] private string mysterySymbol = "???????";
+  [SerializeField] private string mysteryDescription = "Unknown Evidence";
+
   [Header("Real-Time Updates")]
   [SerializeField] private bool enableRealTimeUpdates = true;
-  [SerializeField] private float updateCheckRate = 0.5f; // How often to check for found evidence
-  [SerializeField] private bool debugRealTimeUpdates = true;
+  [SerializeField] private float updateCheckRate = 0.5f;
 
   [Header("Scene Generator Integration")]
   [SerializeField] private CrimeSceneGenerator sceneGenerator;
@@ -34,8 +40,10 @@ public class EvidenceChecklist : MonoBehaviour
   [Header("UI Settings")]
   [SerializeField] private Color foundColor = new Color(0.2f, 0.8f, 0.2f);
   [SerializeField] private Color notFoundColor = new Color(0.8f, 0.2f, 0.2f);
+  [SerializeField] private Color mysteryColor = new Color(0.7f, 0.7f, 0.3f);
   [SerializeField] private string checkmarkSymbol = "✓";
   [SerializeField] private string uncheckSymbol = "□";
+  [SerializeField] private string mysteryCheckSymbol = "?";
   [SerializeField] private float itemSpacing = 15f;
   [SerializeField] private float itemHeight = 60f;
 
@@ -54,11 +62,33 @@ public class EvidenceChecklist : MonoBehaviour
   private float lastUpdateCheck = 0f;
   private int lastFoundCount = 0;
 
+  // Singleton pattern to prevent multiple instances
+  private static EvidenceChecklist instance;
+  public static EvidenceChecklist Instance => instance;
+
+  void Awake()
+  {
+    // Implement singleton pattern
+    if (instance != null && instance != this)
+    {
+      Destroy(gameObject);
+      return;
+    }
+    instance = this;
+  }
+
   void Start()
   {
+    // Additional safety check
+    if (instance != this)
+    {
+      return;
+    }
+
     DestroyExistingChecklistPrefabs();
     FindRequiredComponents();
     FindSceneGenerator();
+    FindToolSpawner();
     InitializeEvidence();
     CreateChecklistUI();
 
@@ -73,8 +103,24 @@ public class EvidenceChecklist : MonoBehaviour
     }
   }
 
+  void OnDestroy()
+  {
+    if (instance == this)
+    {
+      instance = null;
+    }
+
+    // Clean up any remaining checklist instances
+    if (checklistInstance != null)
+    {
+      Destroy(checklistInstance);
+    }
+  }
+
   void Update()
   {
+    if (instance != this) return; // Safety check
+
     if (Input.GetKeyDown(toggleKey)) ToggleChecklist();
 
     bool isButtonPressed = CheckVRButtonPressed();
@@ -94,10 +140,37 @@ public class EvidenceChecklist : MonoBehaviour
     }
   }
 
+  // Find ToolSpawner for cross-script communication
+  private void FindToolSpawner()
+  {
+    if (autoFindToolSpawner && toolSpawner == null)
+    {
+      toolSpawner = FindObjectOfType<ToolSpawner>();
+    }
+  }
+
+  // Notify ToolSpawner when our visibility changes
+  private void NotifyToolSpawnerOfVisibilityChange()
+  {
+    if (notifyToolSpawnerOnToggle && toolSpawner != null)
+    {
+      if (isChecklistVisible)
+      {
+        // We're becoming visible - ask ToolSpawner to disable VR controls
+        toolSpawner.DisableVRControls();
+      }
+      else
+      {
+        // We're becoming hidden - allow ToolSpawner to use VR controls
+        toolSpawner.EnableVRControls();
+      }
+    }
+  }
+
   // REAL-TIME MONITORING FOR FOUND EVIDENCE
   IEnumerator RealTimeFoundEvidenceMonitoring()
   {
-    while (enableRealTimeUpdates)
+    while (enableRealTimeUpdates && instance == this)
     {
       yield return new WaitForSeconds(updateCheckRate);
 
@@ -112,11 +185,6 @@ public class EvidenceChecklist : MonoBehaviour
         {
           UpdateChecklistUI();
         }
-
-        if (debugRealTimeUpdates)
-        {
-          Debug.Log($"📊 EvidenceChecklist: Found evidence count changed to {currentFoundCount}/{GetTotalEvidenceCount()}");
-        }
       }
     }
   }
@@ -126,13 +194,8 @@ public class EvidenceChecklist : MonoBehaviour
     if (autoFindSceneGenerator && sceneGenerator == null)
     {
       sceneGenerator = FindObjectOfType<CrimeSceneGenerator>();
-      if (sceneGenerator != null)
+      if (sceneGenerator == null)
       {
-        Debug.Log("EvidenceChecklist: Found CrimeSceneGenerator automatically");
-      }
-      else
-      {
-        Debug.LogWarning("EvidenceChecklist: CrimeSceneGenerator not found! Using manual evidence list as fallback.");
         useManualEvidenceList = true;
       }
     }
@@ -142,16 +205,12 @@ public class EvidenceChecklist : MonoBehaviour
   {
     int lastObjectCount = 0;
 
-    while (updateOnSceneGeneration && sceneGenerator != null)
+    while (updateOnSceneGeneration && sceneGenerator != null && instance == this)
     {
       int currentObjectCount = sceneGenerator.GetSpawnedObjectCount();
 
       if (currentObjectCount != lastObjectCount)
       {
-        if (debugRealTimeUpdates)
-        {
-          Debug.Log("🔄 EvidenceChecklist: Scene generation detected - updating checklist");
-        }
         yield return new WaitForSeconds(0.5f);
 
         RefreshEvidenceList();
@@ -164,10 +223,7 @@ public class EvidenceChecklist : MonoBehaviour
 
   public void RefreshEvidenceList()
   {
-    if (debugRealTimeUpdates)
-    {
-      Debug.Log("🔄 EvidenceChecklist: Refreshing evidence list...");
-    }
+    if (instance != this) return;
 
     InitializeEvidence();
 
@@ -183,20 +239,44 @@ public class EvidenceChecklist : MonoBehaviour
         UpdateChecklistUI();
       }
     }
-
-    Debug.Log($" EvidenceChecklist: Refreshed with {evidenceNames.Count} items - {string.Join(", ", evidenceNames)}");
   }
 
   private void DestroyExistingChecklistPrefabs()
   {
-    GameObject[] objects = GameObject.FindObjectsOfType<GameObject>();
-    foreach (GameObject obj in objects)
+    // More comprehensive cleanup
+    GameObject[] allObjects = FindObjectsOfType<GameObject>();
+    foreach (GameObject obj in allObjects)
     {
-      if (obj.name.Contains("ChecklistPrefab") ||
-          (obj.GetComponent<Canvas>() != null && obj.name.Contains("DefaultChecklist")))
+      if (obj != null && (
+          obj.name.Contains("ChecklistPrefab") ||
+          obj.name.Contains("DefaultChecklist") ||
+          obj.name.Contains("EvidenceChecklist") ||
+          (obj.GetComponent<Canvas>() != null && obj.transform.Find("Title") != null &&
+           obj.transform.Find("Title").GetComponent<TextMeshProUGUI>() != null &&
+           obj.transform.Find("Title").GetComponent<TextMeshProUGUI>().text.Contains("EVIDENCE"))))
       {
-        Debug.Log("Removing stray UI: " + obj.name);
-        Destroy(obj);
+        if (obj != checklistInstance) // Don't destroy our own instance
+        {
+          Destroy(obj);
+        }
+      }
+    }
+
+    // Also check for any Canvas components with checklist-like structure
+    Canvas[] canvases = FindObjectsOfType<Canvas>();
+    foreach (Canvas canvas in canvases)
+    {
+      if (canvas != null && canvas.gameObject != checklistInstance)
+      {
+        Transform titleTransform = canvas.transform.Find("Title");
+        if (titleTransform != null)
+        {
+          TextMeshProUGUI titleText = titleTransform.GetComponent<TextMeshProUGUI>();
+          if (titleText != null && (titleText.text.Contains("EVIDENCE") || titleText.text.Contains("CHECKLIST")))
+          {
+            Destroy(canvas.gameObject);
+          }
+        }
       }
     }
   }
@@ -208,13 +288,8 @@ public class EvidenceChecklist : MonoBehaviour
       cameraScript = FindObjectOfType<CameraScript>();
       if (cameraScript == null)
       {
-        Debug.LogError("EvidenceChecklist: No CameraScript found!");
         enabled = false;
         return;
-      }
-      else
-      {
-        Debug.Log("EvidenceChecklist: Found CameraScript automatically");
       }
     }
 
@@ -222,7 +297,6 @@ public class EvidenceChecklist : MonoBehaviour
     {
       GameObject leftController = GameObject.Find("LeftHandAnchor");
       attachPoint = leftController?.transform ?? Camera.main.transform;
-      Debug.Log($"EvidenceChecklist: Attaching checklist to: {attachPoint.name}");
     }
   }
 
@@ -239,7 +313,6 @@ public class EvidenceChecklist : MonoBehaviour
     if (namesToUse == null || namesToUse.Length == 0)
     {
       namesToUse = new string[] { "Bottle 1", "Bottle 2", "Bottle 3", "Glass", "Knife" };
-      Debug.LogWarning("EvidenceChecklist: No evidence names found, using fallback list");
     }
 
     for (int i = 0; i < namesToUse.Length; i++)
@@ -250,15 +323,6 @@ public class EvidenceChecklist : MonoBehaviour
       evidenceNames.Add(name);
       evidenceFound.Add(false);
       evidenceNameToIndex[name] = evidenceNames.Count - 1;
-    }
-
-    if (debugRealTimeUpdates)
-    {
-      Debug.Log($"📋 EvidenceChecklist: Initialized with {evidenceNames.Count} evidence items");
-      foreach (string name in evidenceNames)
-      {
-        Debug.Log($"  📝 Evidence item: {name}");
-      }
     }
   }
 
@@ -272,10 +336,6 @@ public class EvidenceChecklist : MonoBehaviour
         string[] currentSceneNames = sceneGenerator.GetCurrentSceneEvidenceNames();
         if (currentSceneNames != null && currentSceneNames.Length > 0)
         {
-          if (debugRealTimeUpdates)
-          {
-            Debug.Log($"🎬 EvidenceChecklist: Using current scene evidence from generator: {string.Join(", ", currentSceneNames)}");
-          }
           return currentSceneNames;
         }
 
@@ -283,16 +343,12 @@ public class EvidenceChecklist : MonoBehaviour
         string[] allGeneratorNames = sceneGenerator.GetEvidenceNames();
         if (allGeneratorNames != null && allGeneratorNames.Length > 0)
         {
-          if (debugRealTimeUpdates)
-          {
-            Debug.Log($"🎬 EvidenceChecklist: Using all evidence names from generator: {string.Join(", ", allGeneratorNames)}");
-          }
           return allGeneratorNames;
         }
       }
       catch (System.Exception e)
       {
-        Debug.LogWarning($"EvidenceChecklist: Error getting evidence from scene generator: {e.Message}");
+        // Silent error handling
       }
     }
 
@@ -302,10 +358,6 @@ public class EvidenceChecklist : MonoBehaviour
       string[] cameraNames = cameraScript.GetCurrentTargetNames();
       if (cameraNames != null && cameraNames.Length > 0)
       {
-        if (debugRealTimeUpdates)
-        {
-          Debug.Log($"📷 EvidenceChecklist: Using evidence names from camera script: {string.Join(", ", cameraNames)}");
-        }
         return cameraNames;
       }
     }
@@ -313,10 +365,6 @@ public class EvidenceChecklist : MonoBehaviour
     // Priority 3: Manual evidence list
     if (useManualEvidenceList)
     {
-      if (debugRealTimeUpdates)
-      {
-        Debug.Log($"📝 EvidenceChecklist: Using manual evidence list: {string.Join(", ", evidenceItemNames)}");
-      }
       return evidenceItemNames;
     }
 
@@ -338,10 +386,6 @@ public class EvidenceChecklist : MonoBehaviour
 
     if (scannedNames.Count > 0)
     {
-      if (debugRealTimeUpdates)
-      {
-        Debug.Log($"🏷️ EvidenceChecklist: Using scanned evidence from scene: {string.Join(", ", scannedNames)}");
-      }
       return scannedNames.ToArray();
     }
 
@@ -386,7 +430,12 @@ public class EvidenceChecklist : MonoBehaviour
 
   private void CreateChecklistUI()
   {
-    checklistInstance = new GameObject("DefaultChecklist");
+    if (checklistInstance != null)
+    {
+      Destroy(checklistInstance);
+    }
+
+    checklistInstance = new GameObject("DefaultChecklist_" + GetInstanceID());
     checklistInstance.transform.position = initialSpawnPosition;
 
     Canvas canvas = checklistInstance.AddComponent<Canvas>();
@@ -421,7 +470,7 @@ public class EvidenceChecklist : MonoBehaviour
     titleRect.anchoredPosition = Vector2.zero;
 
     TextMeshProUGUI titleText = titleGO.AddComponent<TextMeshProUGUI>();
-    titleText.text = "EVIDENCE CHECKLIST";
+    titleText.text = enableMysteryMode ? "EVIDENCE SEARCH" : "EVIDENCE CHECKLIST";
     titleText.color = Color.white;
     titleText.fontSize = 32;
     titleText.alignment = TextAlignmentOptions.Center;
@@ -429,21 +478,35 @@ public class EvidenceChecklist : MonoBehaviour
     titleText.outlineWidth = 0.2f;
     titleText.outlineColor = new Color(0, 0, 0, 0.7f);
 
+    // VR Controls hint
+    GameObject hintGO = new GameObject("VRHint");
+    hintGO.transform.SetParent(checklistInstance.transform, false);
+    RectTransform hintRect = hintGO.AddComponent<RectTransform>();
+    hintRect.anchorMin = new Vector2(0, 1);
+    hintRect.anchorMax = new Vector2(1, 1);
+    hintRect.sizeDelta = new Vector2(0, 25);
+    hintRect.anchoredPosition = new Vector2(0, -75);
+
+    TextMeshProUGUI hintText = hintGO.AddComponent<TextMeshProUGUI>();
+    hintText.text = "VR: Left Stick=Navigate | Y=Toggle | X=Select";
+    hintText.color = new Color(0.7f, 0.7f, 0.7f, 0.8f);
+    hintText.fontSize = 14;
+    hintText.alignment = TextAlignmentOptions.Center;
+    hintText.fontStyle = FontStyles.Italic;
+
     // Content area
     GameObject contentGO = new GameObject("Content");
     contentGO.transform.SetParent(checklistInstance.transform, false);
     RectTransform contentRect = contentGO.AddComponent<RectTransform>();
     contentRect.anchorMin = new Vector2(0, 0);
     contentRect.anchorMax = new Vector2(1, 1);
-    contentRect.sizeDelta = new Vector2(0, -80);
-    contentRect.anchoredPosition = new Vector2(0, -40);
+    contentRect.sizeDelta = new Vector2(0, -110);
+    contentRect.anchoredPosition = new Vector2(0, -55);
 
     SetupChecklistContent(contentGO.transform);
 
     checklistInstance.SetActive(false);
     isChecklistVisible = false;
-
-    Debug.Log($" EvidenceChecklist: Created UI with {evidenceNames.Count} items");
   }
 
   private void SetupChecklistContent(Transform contentArea)
@@ -454,11 +517,6 @@ public class EvidenceChecklist : MonoBehaviour
     for (int i = 0; i < evidenceNames.Count; i++)
     {
       CreateChecklistItem(contentArea, i);
-    }
-
-    if (debugRealTimeUpdates)
-    {
-      Debug.Log($"📝 EvidenceChecklist: Setup content with {evidenceNames.Count} items");
     }
   }
 
@@ -486,7 +544,11 @@ public class EvidenceChecklist : MonoBehaviour
     bgRect.anchoredPosition = Vector2.zero;
 
     Image bgImage = bgGO.AddComponent<Image>();
-    bgImage.color = new Color(notFoundColor.r, notFoundColor.g, notFoundColor.b, 0.2f);
+    // Use mystery color if mystery mode is enabled and evidence not found
+    Color bgColor = enableMysteryMode && !evidenceFound[index] ?
+                   new Color(mysteryColor.r, mysteryColor.g, mysteryColor.b, 0.2f) :
+                   new Color(notFoundColor.r, notFoundColor.g, notFoundColor.b, 0.2f);
+    bgImage.color = bgColor;
     checklistImages.Add(bgImage);
 
     // Text
@@ -500,13 +562,38 @@ public class EvidenceChecklist : MonoBehaviour
     textRect.anchoredPosition = Vector2.zero;
 
     TextMeshProUGUI tmpText = textGO.AddComponent<TextMeshProUGUI>();
-    tmpText.text = $"{uncheckSymbol} {evidenceNames[index]}";
-    tmpText.color = Color.white;
+
+    // Set initial text based on mystery mode
+    string displayText = GetDisplayTextForEvidence(index);
+    tmpText.text = displayText;
+
+    tmpText.color = enableMysteryMode && !evidenceFound[index] ? mysteryColor : Color.white;
     tmpText.fontSize = 24;
     tmpText.alignment = TextAlignmentOptions.Left;
     tmpText.outlineWidth = 0.2f;
     tmpText.outlineColor = new Color(0, 0, 0, 0.5f);
     checklistTexts.Add(tmpText);
+  }
+
+  private string GetDisplayTextForEvidence(int index)
+  {
+    bool found = evidenceFound[index];
+
+    if (enableMysteryMode && !found)
+    {
+      // Show mystery symbol for unfound evidence
+      return $"{mysteryCheckSymbol} {mysterySymbol}";
+    }
+    else if (found)
+    {
+      // Show actual name for found evidence
+      return $"{checkmarkSymbol} {evidenceNames[index]}";
+    }
+    else
+    {
+      // Show actual name with unchecked symbol (non-mystery mode)
+      return $"{uncheckSymbol} {evidenceNames[index]}";
+    }
   }
 
   private void UpdateChecklistTransform()
@@ -521,6 +608,8 @@ public class EvidenceChecklist : MonoBehaviour
 
   public void ToggleChecklist()
   {
+    if (instance != this) return;
+
     isChecklistVisible = !isChecklistVisible;
     if (checklistInstance != null)
     {
@@ -535,7 +624,9 @@ public class EvidenceChecklist : MonoBehaviour
         checklistInstance.transform.position = initialSpawnPosition;
       }
     }
-    Debug.Log($"📋 EvidenceChecklist: {(isChecklistVisible ? "shown" : "hidden")}");
+
+    // Notify ToolSpawner of visibility change
+    NotifyToolSpawnerOfVisibilityChange();
   }
 
   private void CheckForNewlyFoundEvidence()
@@ -556,10 +647,6 @@ public class EvidenceChecklist : MonoBehaviour
           if (TryMarkEvidence(evidenceName))
           {
             foundNew = true;
-            if (debugRealTimeUpdates)
-            {
-              Debug.Log($" EvidenceChecklist: Marked evidence as found: {evidenceName}");
-            }
           }
         }
       }
@@ -620,7 +707,8 @@ public class EvidenceChecklist : MonoBehaviour
     Transform titleTransform = checklistInstance.transform.Find("Title");
     if (titleTransform?.GetComponent<TextMeshProUGUI>() is TextMeshProUGUI titleText)
     {
-      titleText.text = $"EVIDENCE: {foundCount}/{evidenceNames.Count}";
+      string titlePrefix = enableMysteryMode ? "EVIDENCE FOUND" : "EVIDENCE";
+      titleText.text = $"{titlePrefix}: {foundCount}/{evidenceNames.Count}";
       titleText.color = foundCount == evidenceNames.Count && foundCount > 0 ?
           new Color(0.2f, 1f, 0.2f, 1f) : (foundCount > 0 ? new Color(1f, 1f, 0.2f, 1f) : Color.white);
     }
@@ -630,15 +718,39 @@ public class EvidenceChecklist : MonoBehaviour
     {
       bool found = evidenceFound[i];
 
-      checklistTexts[i].text = $"{(found ? checkmarkSymbol : uncheckSymbol)} {evidenceNames[i]}";
-      checklistTexts[i].fontStyle = found ? FontStyles.Bold : FontStyles.Normal;
-      checklistTexts[i].color = found ? new Color(0.2f, 1f, 0.2f, 1f) : Color.white;
+      // Update text based on mystery mode and found status
+      checklistTexts[i].text = GetDisplayTextForEvidence(i);
+
+      if (found)
+      {
+        checklistTexts[i].fontStyle = FontStyles.Bold;
+        checklistTexts[i].color = new Color(0.2f, 1f, 0.2f, 1f);
+      }
+      else if (enableMysteryMode)
+      {
+        checklistTexts[i].fontStyle = FontStyles.Normal;
+        checklistTexts[i].color = mysteryColor;
+      }
+      else
+      {
+        checklistTexts[i].fontStyle = FontStyles.Normal;
+        checklistTexts[i].color = Color.white;
+      }
 
       if (i < checklistImages.Count)
       {
-        checklistImages[i].color = found ?
-            new Color(foundColor.r, foundColor.g, foundColor.b, 0.4f) :
-            new Color(notFoundColor.r, notFoundColor.g, notFoundColor.b, 0.1f);
+        if (found)
+        {
+          checklistImages[i].color = new Color(foundColor.r, foundColor.g, foundColor.b, 0.4f);
+        }
+        else if (enableMysteryMode)
+        {
+          checklistImages[i].color = new Color(mysteryColor.r, mysteryColor.g, mysteryColor.b, 0.2f);
+        }
+        else
+        {
+          checklistImages[i].color = new Color(notFoundColor.r, notFoundColor.g, notFoundColor.b, 0.1f);
+        }
       }
     }
 
@@ -663,15 +775,13 @@ public class EvidenceChecklist : MonoBehaviour
         completionRect.anchoredPosition = new Vector2(0, 20);
 
         TextMeshProUGUI completionText = completionGO.AddComponent<TextMeshProUGUI>();
-        completionText.text = "ALL EVIDENCE FOUND!";
+        completionText.text = enableMysteryMode ? "ALL EVIDENCE DISCOVERED!" : "ALL EVIDENCE FOUND!";
         completionText.color = new Color(0.2f, 1f, 0.2f, 1f);
         completionText.fontSize = 32;
         completionText.fontStyle = FontStyles.Bold;
         completionText.alignment = TextAlignmentOptions.Center;
         completionText.outlineWidth = 0.2f;
         completionText.outlineColor = new Color(0, 0, 0, 0.7f);
-
-        Debug.Log("🎉 EvidenceChecklist: ALL EVIDENCE FOUND!");
       }
     }
     else if (completionTransform != null)
@@ -704,18 +814,17 @@ public class EvidenceChecklist : MonoBehaviour
   // Public API for Scene Generator Integration
   public void OnSceneGenerated()
   {
-    if (debugRealTimeUpdates)
-    {
-      Debug.Log("🔄 EvidenceChecklist: Scene generated - refreshing evidence checklist");
-    }
+    if (instance != this) return;
+
     RefreshEvidenceList();
   }
 
   public void MarkEvidenceAsFound(string evidenceName)
   {
+    if (instance != this) return;
+
     if (TryMarkEvidence(evidenceName))
     {
-      Debug.Log($" EvidenceChecklist: Manually marked evidence as found: {evidenceName}");
       if (isChecklistVisible) UpdateChecklistUI();
     }
   }
@@ -724,44 +833,43 @@ public class EvidenceChecklist : MonoBehaviour
   public int GetFoundEvidenceCount() => evidenceFound.FindAll(found => found).Count;
   public int GetTotalEvidenceCount() => evidenceNames.Count;
 
+  // Public API for cross-script communication
+  public bool IsChecklistVisible() => isChecklistVisible;
+
+  public bool IsUsingVRControls()
+  {
+    // Evidence checklist doesn't have complex VR navigation like ToolSpawner
+    // but we can check if it's visible as an indicator
+    return isChecklistVisible;
+  }
+
+  public void ForceCloseChecklist()
+  {
+    if (isChecklistVisible)
+    {
+      ToggleChecklist();
+    }
+  }
+
+  public void SetToolSpawnerReference(ToolSpawner spawner)
+  {
+    toolSpawner = spawner;
+  }
+
   public void ResetChecklist()
   {
+    if (instance != this) return;
+
     for (int i = 0; i < evidenceFound.Count; i++) evidenceFound[i] = false;
     if (isChecklistVisible) UpdateChecklistUI();
-    Debug.Log("🔄 EvidenceChecklist: Reset - all evidence marked as not found");
   }
 
-  // Context menu methods for debugging
-  [ContextMenu("🔄 Force Refresh Evidence List")]
-  public void ForceRefreshEvidenceList()
+  // Mystery Mode Controls
+  public void ToggleMysteryMode()
   {
-    RefreshEvidenceList();
-  }
+    if (instance != this) return;
 
-  [ContextMenu("📊 Show Checklist Status")]
-  public void ShowChecklistStatus()
-  {
-    Debug.Log("=== 📋 EVIDENCE CHECKLIST STATUS ===");
-    Debug.Log($"Total Evidence: {evidenceNames.Count}");
-    Debug.Log($"Found Evidence: {GetFoundEvidenceCount()}");
-    Debug.Log($"Evidence Names: {string.Join(", ", evidenceNames)}");
-    for (int i = 0; i < evidenceNames.Count; i++)
-    {
-      Debug.Log($"  {(evidenceFound[i] ? "" : "❌")} {evidenceNames[i]}");
-    }
-    Debug.Log($"Camera Script: {(cameraScript != null ? "Connected" : "Missing")}");
-    Debug.Log($"Scene Generator: {(sceneGenerator != null ? "Connected" : "Missing")}");
-    Debug.Log("===================================");
-  }
-
-  [ContextMenu(" Mark All Evidence Found (Test)")]
-  public void MarkAllEvidenceFoundTest()
-  {
-    for (int i = 0; i < evidenceFound.Count; i++)
-    {
-      evidenceFound[i] = true;
-    }
+    enableMysteryMode = !enableMysteryMode;
     if (isChecklistVisible) UpdateChecklistUI();
-    Debug.Log(" EvidenceChecklist: Test - marked all evidence as found");
   }
 }
