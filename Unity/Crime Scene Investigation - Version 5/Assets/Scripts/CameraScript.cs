@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
+// - CAMERA SCRIPT MAIN CLASS
 public class CameraScript : MonoBehaviour
 {
+  // - INSPECTOR CONFIGURATION
   [Header("Camera Settings")]
   [SerializeField] private Camera secondCamera;
   [SerializeField] private RenderTexture renderTexture;
@@ -19,7 +21,7 @@ public class CameraScript : MonoBehaviour
 
   [Header("Evidence Detection")]
   [SerializeField] private float maxDetectionDistance = 10f;
-  [SerializeField] private float detectionFOVNarrow = 0.3f;
+  [SerializeField] private float detectionFOVNarrow = 60;
   [SerializeField] private LayerMask evidenceLayerMask = -1;
 
   [Header("Fingerprint Detection - SIMPLIFIED")]
@@ -27,12 +29,10 @@ public class CameraScript : MonoBehaviour
   [SerializeField] private bool autoFindDustBrush = true;
   [SerializeField] private float fingerprintRevealThreshold = 50f;
   [SerializeField] private Color photographedFingerprintColor = Color.white;
-  [SerializeField] private bool debugFingerprintDetection = true;
 
   [Header("Real-Time Detection")]
   [SerializeField] private bool enableRealTimeDetection = true;
   [SerializeField] private float evidenceRefreshRate = 1f;
-  [SerializeField] private bool debugRealTimeUpdates = true;
 
   [Header("Scene Generator Integration")]
   [SerializeField] private CrimeSceneGenerator sceneGenerator;
@@ -44,8 +44,8 @@ public class CameraScript : MonoBehaviour
   [SerializeField] private float markerOffset = 0.2f;
   [SerializeField] private float markerHeight = 0.1f;
   [SerializeField] private float scaleDuration = 1.0f;
-  [SerializeField] private bool placeOnlyOneMarker = true;
-  [SerializeField] private bool placeMarkersOnFingerprints = false;
+  [SerializeField] private bool placeOnlyOneMarker = false;
+  [SerializeField] private bool placeMarkersOnFingerprints = true;
 
   [Header("Ground Settings")]
   [SerializeField] private Transform groundObject;
@@ -57,16 +57,12 @@ public class CameraScript : MonoBehaviour
   [SerializeField] private float listenDuration = 5.0f;
   [SerializeField] private float triggerDebounceTime = 0.5f;
 
-  // NEW: Manual Evidence List
   [Header("Manual Evidence List")]
   [SerializeField] private GameObject[] manualEvidenceObjects;
-  [SerializeField] private bool useManualEvidenceList = false; // Toggle to enable/disable this list
+  [SerializeField] private bool useManualEvidenceList = false;
 
-  // NEW: Debug Options for listing all seen objects and pausing
-  [Header("Debug - Custom Additions")]
-  [SerializeField] private bool debugListAllSeenObjects = true;
-
-  // State tracking
+  // - PRIVATE STATE VARIABLES
+  // Movement and photo state tracking
   private bool isTakingPhoto = false;
   private bool isMoving = false;
   private bool canTakePicture = false;
@@ -75,69 +71,97 @@ public class CameraScript : MonoBehaviour
   private float lastMovementTime = 0f;
   private float lastPhotoTime = 0f;
 
-  // Evidence tracking
+  // Evidence and marker tracking collections
   private List<GameObject> evidenceObjects = new List<GameObject>();
   private List<GameObject> markers = new List<GameObject>();
   private Dictionary<GameObject, GameObject> markerByObject = new Dictionary<GameObject, GameObject>();
   private Dictionary<GameObject, string> evidenceObjectNames = new Dictionary<GameObject, string>();
 
-  // Fingerprint tracking - SIMPLIFIED
+  // Fingerprint photography tracking
   private HashSet<GameObject> photographedFingerprints = new HashSet<GameObject>();
   private Dictionary<GameObject, Material> fingerprintOriginalMaterials = new Dictionary<GameObject, Material>();
 
-  // Real-time tracking
+  // Real-time monitoring state
   private int lastKnownEvidenceCount = 0;
   private HashSet<string> lastKnownEvidenceNames = new HashSet<string>();
 
-  // Special trigger detection for Oculus
+  // VR input handling
   private bool wasButtonPressed = false;
 
+  // - UNITY LIFECYCLE METHODS
   void Start()
   {
+    // Initialize position and rotation tracking
     lastPosition = transform.position;
     lastRotation = transform.rotation;
 
+    // Setup all camera components and dependencies
     FindDustBrush();
-
-    if (autoFindSceneGenerator && sceneGenerator == null)
-    {
-      sceneGenerator = FindObjectOfType<CrimeSceneGenerator>();
-      if (sceneGenerator != null)
-      {
-        //Debug.Log("CameraScript: Found CrimeSceneGenerator automatically");
-      }
-      else
-      {
-        Debug.LogWarning("CameraScript: No CrimeSceneGenerator found! Evidence detection will be limited.");
-      }
-    }
-
+    InitializeSceneGenerator();
     SetupCamera();
     SetupRenderTexture();
     FindFlashLight();
     FindGroundObject();
     CreateDefaultMarkerPrefab();
 
+    // Populate initial evidence list
     PopulateEvidenceObjects();
 
+    // Start real-time monitoring if enabled
     if (enableRealTimeDetection)
     {
       StartCoroutine(RealTimeEvidenceMonitoring());
     }
   }
 
+  void Update()
+  {
+    if (isTakingPhoto) return;
+
+    // Update movement and photo state
+    CheckMovement();
+    UpdateCanTakePicture();
+
+    // Handle photo input
+    if (canTakePicture)
+    {
+      // Keyboard and mouse input
+      if (Input.GetKeyDown(KeyCode.Space) || Input.GetMouseButtonDown(0))
+      {
+        TakePhoto();
+      }
+
+      // VR trigger input
+      bool triggerPressed = CheckAllTriggerMethods();
+      if (triggerPressed && Time.time - lastPhotoTime > triggerDebounceTime)
+      {
+        TakePhoto();
+        lastPhotoTime = Time.time;
+      }
+    }
+  }
+
+  // - COMPONENT SETUP
   void FindDustBrush()
   {
     if (autoFindDustBrush && dustBrush == null)
     {
       dustBrush = FindObjectOfType<DustBrush>();
-      if (dustBrush != null)
-      {
-        //Debug.Log("CameraScript: Found DustBrush automatically");
-      }
-      else
+      if (dustBrush == null)
       {
         Debug.LogWarning("CameraScript: No DustBrush found! Fingerprint detection will be limited.");
+      }
+    }
+  }
+
+  void InitializeSceneGenerator()
+  {
+    if (autoFindSceneGenerator && sceneGenerator == null)
+    {
+      sceneGenerator = FindObjectOfType<CrimeSceneGenerator>();
+      if (sceneGenerator == null)
+      {
+        Debug.LogWarning("CameraScript: No CrimeSceneGenerator found! Evidence detection will be limited.");
       }
     }
   }
@@ -146,22 +170,25 @@ public class CameraScript : MonoBehaviour
   {
     if (secondCamera == null)
     {
+      // Try to find camera in children first
       secondCamera = GetComponentInChildren<Camera>();
       if (secondCamera == null)
       {
+        // Look for specific camera child
         Transform cameraTransform = transform.Find("Camera");
         if (cameraTransform != null)
         {
           secondCamera = cameraTransform.GetComponent<Camera>();
-          //Debug.Log("Found camera in child: " + cameraTransform.name);
         }
       }
+      // Fallback to camera on same object
       if (secondCamera == null)
       {
         secondCamera = GetComponent<Camera>();
       }
     }
 
+    // Validate camera was found
     if (secondCamera == null)
     {
       Debug.LogError("CameraScript: No camera found! Cannot operate without a camera.");
@@ -206,10 +233,10 @@ public class CameraScript : MonoBehaviour
       if (groundObj != null)
       {
         groundObject = groundObj.transform;
-        //Debug.Log("Found ground object: " + groundObj.name);
       }
       else
       {
+        // Try common ground object names
         string[] groundNames = new string[] { "Ground", "Floor", "Terrain", "Plane" };
         foreach (string name in groundNames)
         {
@@ -217,7 +244,6 @@ public class CameraScript : MonoBehaviour
           if (obj != null)
           {
             groundObject = obj.transform;
-            //Debug.Log("Found potential ground object: " + obj.name);
             break;
           }
         }
@@ -236,13 +262,16 @@ public class CameraScript : MonoBehaviour
     {
       GameObject markerObj = new GameObject("MarkerPrefab");
 
+      // Create yellow cube marker
       GameObject cubeObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
       cubeObj.transform.SetParent(markerObj.transform);
       cubeObj.transform.localScale = new Vector3(0.05f, 0.1f, 0.05f);
       cubeObj.transform.localPosition = new Vector3(0, 0.05f, 0);
 
+      // Remove collider to prevent interference
       Destroy(cubeObj.GetComponent<Collider>());
 
+      // Setup yellow material
       MeshRenderer renderer = cubeObj.GetComponent<MeshRenderer>();
       Material mat = new Material(Shader.Find("Standard"));
       mat.color = Color.yellow;
@@ -254,6 +283,7 @@ public class CameraScript : MonoBehaviour
     }
   }
 
+  // - REAL-TIME MONITORING
   IEnumerator RealTimeEvidenceMonitoring()
   {
     while (enableRealTimeDetection)
@@ -264,11 +294,6 @@ public class CameraScript : MonoBehaviour
 
       if (evidenceChanged)
       {
-        if (debugRealTimeUpdates)
-        {
-          //Debug.Log("CameraScript: Evidence changed in scene - refreshing detection list");
-        }
-
         PopulateEvidenceObjects();
         NotifyEvidenceListChanged();
       }
@@ -278,7 +303,8 @@ public class CameraScript : MonoBehaviour
   bool CheckForEvidenceChanges()
   {
     int currentCount = 0;
-    // Prioritize manual list if enabled
+
+    // Get current evidence count based on active source
     if (useManualEvidenceList && manualEvidenceObjects != null)
     {
       currentCount = manualEvidenceObjects.Count(obj => obj != null && obj.activeInHierarchy);
@@ -293,18 +319,20 @@ public class CameraScript : MonoBehaviour
       currentCount = taggedEvidence.Length;
     }
 
+    // Check for count changes
     if (currentCount != lastKnownEvidenceCount)
     {
       lastKnownEvidenceCount = currentCount;
       return true;
     }
 
+    // Remove null objects and check if any were removed
     if (evidenceObjects.RemoveAll(obj => obj == null) > 0)
     {
       return true;
     }
 
-    // Check names only if using SceneGenerator
+    // Check for name changes when using scene generator
     if (!useManualEvidenceList && sceneGenerator != null)
     {
       try
@@ -333,18 +361,16 @@ public class CameraScript : MonoBehaviour
     if (checklist != null)
     {
       checklist.RefreshEvidenceList();
-      if (debugRealTimeUpdates)
-      {
-        //Debug.Log("CameraScript: Notified EvidenceChecklist of changes");
-      }
     }
   }
 
+  // - EVIDENCE DETECTION SYSTEM
   void PopulateEvidenceObjects()
   {
     evidenceObjects.Clear();
     evidenceObjectNames.Clear();
 
+    // Use appropriate evidence source
     if (useManualEvidenceList && manualEvidenceObjects != null)
     {
       GetEvidenceFromManualList();
@@ -357,22 +383,8 @@ public class CameraScript : MonoBehaviour
     {
       ScanEvidenceByTag();
     }
-
-    if (debugRealTimeUpdates)
-    {
-      //Debug.Log("CameraScript: Found " + evidenceObjects.Count + " evidence objects");
-      foreach (GameObject obj in evidenceObjects)
-      {
-        if (obj != null)
-        {
-          string displayName = evidenceObjectNames.ContainsKey(obj) ? evidenceObjectNames[obj] : obj.name;
-          //Debug.Log("  " + displayName + " (" + obj.name + ") at " + obj.transform.position);
-        }
-      }
-    }
   }
 
-  // NEW: Method to get evidence from manual list
   void GetEvidenceFromManualList()
   {
     if (manualEvidenceObjects == null) return;
@@ -385,12 +397,7 @@ public class CameraScript : MonoBehaviour
         evidenceObjectNames[evidenceObj] = CleanObjectName(evidenceObj.name);
       }
     }
-    if (debugRealTimeUpdates)
-    {
-      //Debug.Log("CameraScript: Got " + evidenceObjects.Count + " evidence objects from Manual List");
-    }
   }
-
 
   void GetEvidenceFromSceneGenerator()
   {
@@ -408,6 +415,7 @@ public class CameraScript : MonoBehaviour
           {
             evidenceObjects.Add(evidenceObj);
 
+            // Use generator names if available, otherwise clean object name
             if (generatorEvidenceNames != null && i < generatorEvidenceNames.Length)
             {
               evidenceObjectNames[evidenceObj] = generatorEvidenceNames[i];
@@ -417,12 +425,6 @@ public class CameraScript : MonoBehaviour
               evidenceObjectNames[evidenceObj] = CleanObjectName(evidenceObj.name);
             }
           }
-        }
-
-        if (debugRealTimeUpdates)
-        {
-          //Debug.Log("CameraScript: Got " + evidenceObjects.Count + " evidence objects from Scene Generator");
-          //Debug.Log("Evidence names: " + string.Join(", ", generatorEvidenceNames ?? new string[0]));
         }
       }
     }
@@ -443,69 +445,40 @@ public class CameraScript : MonoBehaviour
         evidenceObjectNames[obj] = CleanObjectName(obj.name);
       }
     }
-
-    if (debugRealTimeUpdates && taggedEvidence.Length > 0)
-    {
-      //Debug.Log("CameraScript: Found " + taggedEvidence.Length + " objects with Evidence tag (fallback method)");
-    }
   }
 
+  // - PUBLIC EVENT HANDLERS
   public void OnSceneGenerated()
   {
-    //Debug.Log("CameraScript: Scene regenerated - updating evidence detection");
-
+    // Clear existing state
     ClearMarkers();
     evidenceObjectNames.Clear();
 
-    // Clear fingerprint tracking
+    // Reset fingerprint tracking
     photographedFingerprints.Clear();
     fingerprintOriginalMaterials.Clear();
 
+    // Refresh evidence detection
     PopulateEvidenceObjects();
 
+    // Reset monitoring state
     lastKnownEvidenceCount = 0;
     lastKnownEvidenceNames.Clear();
 
-    // Notify EvidenceChecklist about scene change
+    // Notify evidence checklist
     EvidenceChecklist checklist = FindObjectOfType<EvidenceChecklist>();
     if (checklist != null)
     {
       checklist.OnSceneGenerated();
     }
-
-    //Debug.Log("CameraScript: Updated to track " + evidenceObjects.Count + " evidence objects");
   }
 
   public void UpdateEvidenceList(string[] newEvidenceNames)
   {
-    //Debug.Log("CameraScript: Evidence list update requested, refreshing from scene generator instead");
     PopulateEvidenceObjects();
   }
 
-  void Update()
-  {
-    if (isTakingPhoto) return;
-
-    CheckMovement();
-    UpdateCanTakePicture();
-
-    if (canTakePicture)
-    {
-      if (Input.GetKeyDown(KeyCode.Space) || Input.GetMouseButtonDown(0))
-      {
-        TakePhoto();
-      }
-
-      bool triggerPressed = CheckAllTriggerMethods();
-
-      if (triggerPressed && Time.time - lastPhotoTime > triggerDebounceTime)
-      {
-        TakePhoto();
-        lastPhotoTime = Time.time;
-      }
-    }
-  }
-
+  // - MOVEMENT DETECTION
   void CheckMovement()
   {
     float positionDelta = Vector3.Distance(transform.position, lastPosition);
@@ -528,6 +501,7 @@ public class CameraScript : MonoBehaviour
     canTakePicture = timeSinceMovement < listenDuration;
   }
 
+  // - INPUT HANDLING
   bool CheckAllTriggerMethods()
   {
     if (UnityEngine.XR.XRSettings.isDeviceActive)
@@ -557,11 +531,11 @@ public class CameraScript : MonoBehaviour
     return false;
   }
 
+  // - PHOTO CAPTURE SYSTEM
   void TakePhoto()
   {
     if (isTakingPhoto) return;
 
-    //Debug.Log("Taking photo");
     StartCoroutine(TakePhotoSequence());
   }
 
@@ -569,20 +543,25 @@ public class CameraScript : MonoBehaviour
   {
     isTakingPhoto = true;
 
+    // Enable flash
     if (flashLight != null)
     {
       flashLight.enabled = true;
     }
 
+    // Play shutter sound
     if (cameraShutterSound != null)
     {
       cameraShutterSound.Play();
     }
 
-    CheckEvidenceAndPlaceMarkers(); // Main logic call
+    // Process evidence detection and marker placement
+    CheckEvidenceAndPlaceMarkers();
 
+    // Wait for flash duration
     yield return new WaitForSeconds(flashDuration);
 
+    // Disable flash
     if (flashLight != null)
     {
       flashLight.enabled = false;
@@ -591,181 +570,201 @@ public class CameraScript : MonoBehaviour
     isTakingPhoto = false;
   }
 
+  // - EVIDENCE DETECTION AND MARKER PLACEMENT
   void CheckEvidenceAndPlaceMarkers()
   {
     if (secondCamera == null) return;
 
-    //Debug.Log("CHECKING FOR EVIDENCE IN VIEW");
-
+    // Refresh evidence list
     PopulateEvidenceObjects();
 
-    Ray ray = secondCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0));
-    RaycastHit[] hits = Physics.RaycastAll(ray, maxDetectionDistance, evidenceLayerMask);
+    bool evidencePhotographedInThisShot = false;
+    HashSet<GameObject> processedObjects = new HashSet<GameObject>();
 
-    System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+    // Cast multiple rays for much wider detection FOV
+    List<RaycastHit> allHits = new List<RaycastHit>();
 
-    //Debug.Log("Raycast found " + hits.Length + " potential evidence items");
+    // Center ray (original behavior)
+    Ray centerRay = secondCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0));
+    RaycastHit[] centerHits = Physics.RaycastAll(centerRay, maxDetectionDistance, evidenceLayerMask);
+    allHits.AddRange(centerHits);
 
-    if (debugListAllSeenObjects)
+    // Much denser ray grid for maximum sensitivity
+    int raysPerAxis = 7;
+    float fovMultiplier = 3.0f;
+    float expandedFOV = detectionFOVNarrow * fovMultiplier;
+
+    // Main grid pattern
+    for (int x = 0; x < raysPerAxis; x++)
     {
-      //Debug.Log("--- Camera Script: All Objects Detected in View Raycast ---");
-      //Debug.Log($"Total objects hit by raycast: {hits.Length}");
+      for (int y = 0; y < raysPerAxis; y++)
+      {
+        // Skip center ray (already cast)
+        if (x == raysPerAxis / 2 && y == raysPerAxis / 2) continue;
+
+        // Calculate viewport coordinates with much wider spread
+        float normalizedX = (float)x / (raysPerAxis - 1);
+        float normalizedY = (float)y / (raysPerAxis - 1);
+
+        // Expand from center with the wider FOV
+        float viewportX = 0.5f + (normalizedX - 0.5f) * (expandedFOV / 60f);
+        float viewportY = 0.5f + (normalizedY - 0.5f) * (expandedFOV / 60f);
+
+        Ray ray = secondCamera.ViewportPointToRay(new Vector3(viewportX, viewportY, 0));
+        RaycastHit[] hits = Physics.RaycastAll(ray, maxDetectionDistance, evidenceLayerMask);
+        allHits.AddRange(hits);
+      }
     }
 
-    if (hits.Length > 0)
+    // Add circular pattern for even better coverage around edges
+    int circleRays = 16;
+    float circleRadius = expandedFOV / 80f;
+
+    for (int i = 0; i < circleRays; i++)
     {
-      foreach (RaycastHit hit in hits)
+      float angle = (float)i / circleRays * Mathf.PI * 2f;
+      float viewportX = 0.5f + Mathf.Cos(angle) * circleRadius;
+      float viewportY = 0.5f + Mathf.Sin(angle) * circleRadius;
+
+      Ray ray = secondCamera.ViewportPointToRay(new Vector3(viewportX, viewportY, 0));
+      RaycastHit[] hits = Physics.RaycastAll(ray, maxDetectionDistance, evidenceLayerMask);
+      allHits.AddRange(hits);
+    }
+
+    // Add diagonal rays for corner coverage
+    float[] diagonalOffsets = { 0.3f, 0.6f, 0.9f, 1.2f };
+    Vector2[] diagonalDirections = {
+        new Vector2(1, 1), new Vector2(-1, 1),
+        new Vector2(1, -1), new Vector2(-1, -1)
+    };
+
+    foreach (float offset in diagonalOffsets)
+    {
+      foreach (Vector2 direction in diagonalDirections)
       {
-        GameObject obj = hit.collider.gameObject;
+        float viewportX = 0.5f + direction.x * offset * (expandedFOV / 100f);
+        float viewportY = 0.5f + direction.y * offset * (expandedFOV / 100f);
 
-        if (debugListAllSeenObjects)
+        Ray ray = secondCamera.ViewportPointToRay(new Vector3(viewportX, viewportY, 0));
+        RaycastHit[] hits = Physics.RaycastAll(ray, maxDetectionDistance, evidenceLayerMask);
+        allHits.AddRange(hits);
+      }
+    }
+
+    // Sort all hits by distance for consistent processing
+    allHits.Sort((a, b) => a.distance.CompareTo(b.distance));
+
+    // Process all raycast hits
+    foreach (RaycastHit hit in allHits)
+    {
+      GameObject obj = hit.collider.gameObject;
+      GameObject rootObject = GetRootEvidenceObject(obj);
+
+      if (rootObject != null && !processedObjects.Contains(rootObject))
+      {
+        processedObjects.Add(rootObject);
+
+        // Check if valid evidence (including fingerprints)
+        if (IsValidEvidenceObject(rootObject))
         {
-          //Debug.Log($"- Seen Object: {obj.name} (Tag: {obj.tag}, Layer: {LayerMask.LayerToName(obj.layer)}, Distance: {hit.distance:F2}m)");
-        }
-
-        GameObject rootObject = GetRootEvidenceObject(obj);
-
-        if (rootObject != null)
-        {
-          if (markerByObject.ContainsKey(rootObject))
+          bool isFingerprint = IsStrictValidFingerprint(rootObject);
+          if (isFingerprint)
           {
-            //Debug.Log("Marker already exists for: " + rootObject.name);
-            continue;
+            HandleFingerprintPhotography(rootObject, hit.collider, hit.point);
+            evidencePhotographedInThisShot = true;
           }
-
-          if (IsValidEvidenceObject(rootObject))
+          else
           {
-            string displayName = GetEvidenceDisplayName(rootObject);
-            //Debug.Log("EVIDENCE FOUND: " + displayName + " (" + rootObject.name + ")");
-
-            bool isValidFingerprint = IsStrictValidFingerprint(rootObject);
-            if (isValidFingerprint)
-            {
-              HandleFingerprintPhotography(rootObject, hit.collider, hit.point);
-            }
-            else
+            // Handle non-fingerprint evidence
+            if (!markerByObject.ContainsKey(rootObject) && (!placeOnlyOneMarker || markerByObject.Count == 0))
             {
               PlaceMarkerBesideCollider(rootObject, hit.collider, hit.point);
-              // NEW: Notify EvidenceChecklist for non-fingerprint evidence
               EvidenceChecklist checklist = FindObjectOfType<EvidenceChecklist>();
               if (checklist != null)
               {
                 checklist.MarkEvidenceAsPhotographed(GetEvidenceDisplayName(rootObject));
               }
+              evidencePhotographedInThisShot = true;
             }
-
-            if (placeOnlyOneMarker) break;
           }
         }
       }
     }
-    else
+
+    // Fallback detection if nothing was found
+    if (!evidencePhotographedInThisShot)
     {
       FallbackEvidenceCheck();
     }
-
-    if (debugListAllSeenObjects)
-    {
-      //Debug.Log("--- End Camera Script: All Objects Detected ---");
-    }
-
-    //Debug.Log("Evidence check complete");
   }
 
+  // - FINGERPRINT DETECTION SYSTEM
   private bool IsStrictValidFingerprint(GameObject obj)
   {
     if (obj == null) return false;
-
     bool hasCorrectTag = obj.CompareTag("Fingerprint");
     int uvLayerIndex = LayerMask.NameToLayer("UV");
     bool onCorrectLayer = uvLayerIndex != -1 && obj.layer == uvLayerIndex;
     string objName = obj.name;
-    bool hasCorrectName = objName == "Fingerprint" ||
-                          (objName.StartsWith("Fingerprint (") && objName.EndsWith(")"));
-
+    bool hasCorrectName = objName == "Fingerprint" || (objName.StartsWith("Fingerprint (") && objName.EndsWith(")"));
     bool isValid = hasCorrectTag && onCorrectLayer && hasCorrectName;
-
-    if (debugFingerprintDetection)
-    {
-      //Debug.Log($"CameraScript: Strict validation for {objName}:");
-      //Debug.Log($"  Tag 'Fingerprint': {hasCorrectTag} (actual: '{obj.tag}')");
-      //Debug.Log($"  Layer: {onCorrectLayer} (actual: '{LayerMask.LayerToName(obj.layer)}')");
-      //Debug.Log($"  Name pattern: {hasCorrectName}");
-      //Debug.Log($"  RESULT: {(isValid ? "✓ VALID" : "✗ INVALID")}");
-    }
-
     return isValid;
   }
 
   void HandleFingerprintPhotography(GameObject fingerprint, Collider hitCollider, Vector3 hitPoint)
   {
-    if (debugFingerprintDetection)
-    {
-      //Debug.Log("CameraScript: Checking fingerprint: " + fingerprint.name);
-    }
-
+    // Validate fingerprint meets strict criteria
     if (!IsStrictValidFingerprint(fingerprint))
     {
-      if (debugFingerprintDetection)
-      {
-        //Debug.Log("CameraScript: Object does not meet strict fingerprint criteria: " + fingerprint.name);
-      }
       return;
     }
 
+    // Check reveal percentage through dust brush
     if (dustBrush != null)
     {
       float revealPercentage = dustBrush.GetFingerprintRevealPercentage(fingerprint);
-
-      if (debugFingerprintDetection)
+      // Process if sufficiently revealed and not already photographed
+      if (revealPercentage >= fingerprintRevealThreshold && !photographedFingerprints.Contains(fingerprint))
       {
-        //Debug.Log("CameraScript: Fingerprint reveal percentage: " + revealPercentage.ToString("F1") + "%");
-      }
-
-      if (revealPercentage >= fingerprintRevealThreshold)
-      {
-        if (!photographedFingerprints.Contains(fingerprint))
+        photographedFingerprints.Add(fingerprint);
+        TurnFingerprintGreen(fingerprint);
+        // Notify evidence checklist
+        EvidenceChecklist checklist = FindObjectOfType<EvidenceChecklist>();
+        if (checklist != null)
         {
-          photographedFingerprints.Add(fingerprint);
-          TurnFingerprintGreen(fingerprint);
-
-          // NEW: Notify EvidenceChecklist for photographed fingerprint
-          EvidenceChecklist checklist = FindObjectOfType<EvidenceChecklist>();
-          if (checklist != null)
-          {
-            checklist.MarkFingerprintAsPhotographedPublic(fingerprint);
-          }
-
-          if (debugFingerprintDetection)
-          {
-            //Debug.Log("CameraScript: ✓ FINGERPRINT PHOTOGRAPHED: " + fingerprint.name);
-            //Debug.Log("CameraScript: Total photographed fingerprints: " + photographedFingerprints.Count);
-          }
+          checklist.MarkFingerprintAsPhotographedPublic(fingerprint);
         }
-        else
-        {
-          if (debugFingerprintDetection)
-          {
-            //Debug.Log("CameraScript: Fingerprint already photographed: " + fingerprint.name);
-          }
-        }
-
+        // Place marker if enabled (for each photographed fingerprint)
         if (placeMarkersOnFingerprints)
         {
-          PlaceMarkerBesideCollider(fingerprint, hitCollider, hitPoint);
-        }
-      }
-      else
-      {
-        if (debugFingerprintDetection)
-        {
-          //Debug.Log("CameraScript: Fingerprint not sufficiently revealed (" + revealPercentage.ToString("F1") + "% < " + fingerprintRevealThreshold + "%)");
+          // Ensure a marker is not placed multiple times for the same fingerprint
+          if (!markerByObject.ContainsKey(fingerprint))
+          {
+            PlaceMarkerBesideCollider(fingerprint, hitCollider, hitPoint);
+          }
         }
       }
     }
     else
     {
       Debug.LogWarning("CameraScript: DustBrush not found - cannot check fingerprint reveal percentage!");
+      if (!photographedFingerprints.Contains(fingerprint))
+      {
+        photographedFingerprints.Add(fingerprint);
+        TurnFingerprintGreen(fingerprint);
+        EvidenceChecklist checklist = FindObjectOfType<EvidenceChecklist>();
+        if (checklist != null)
+        {
+          checklist.MarkFingerprintAsPhotographedPublic(fingerprint);
+        }
+        if (placeMarkersOnFingerprints)
+        {
+          if (!markerByObject.ContainsKey(fingerprint))
+          {
+            PlaceMarkerBesideCollider(fingerprint, hitCollider, hitPoint);
+          }
+        }
+      }
     }
   }
 
@@ -776,28 +775,21 @@ public class CameraScript : MonoBehaviour
     {
       renderer = fingerprint.GetComponentInChildren<Renderer>();
     }
-
     if (renderer != null)
     {
+      // Store original material
       if (!fingerprintOriginalMaterials.ContainsKey(fingerprint))
       {
         fingerprintOriginalMaterials[fingerprint] = renderer.material;
       }
-
+      // Create and apply green material
       Material greenMaterial = new Material(renderer.material);
       greenMaterial.color = photographedFingerprintColor;
-
       if (greenMaterial.HasProperty("_BaseColor"))
       {
         greenMaterial.SetColor("_BaseColor", photographedFingerprintColor);
       }
-
       renderer.material = greenMaterial;
-
-      if (debugFingerprintDetection)
-      {
-        //Debug.Log("Turned fingerprint green: " + fingerprint.name);
-      }
     }
     else
     {
@@ -805,42 +797,37 @@ public class CameraScript : MonoBehaviour
     }
   }
 
+  // - EVIDENCE VALIDATION
   bool IsValidEvidenceObject(GameObject obj)
   {
     if (obj == null) return false;
-
-    // Check if it's in our tracked list (manual, scene generator, or tagged)
+    // Check if in tracked evidence list
     if (evidenceObjects.Contains(obj))
     {
       return true;
     }
-
-    // Fallback to tag for dynamically added objects not in our initial lists
+    // Fallback to tag check
     if (obj.CompareTag("Evidence"))
     {
       return true;
     }
-
-    // Check if it's a strictly valid fingerprint
+    // Check for valid fingerprint
     if (IsStrictValidFingerprint(obj))
     {
       return true;
     }
-
     return false;
   }
 
   private GameObject GetRootEvidenceObject(GameObject colliderObject)
   {
     GameObject current = colliderObject;
-
-    // Check the object itself
+    // Check current object
     if (IsValidEvidenceObject(current))
     {
       return current;
     }
-
-    // Check parents
+    // Check parent hierarchy
     Transform parent = current.transform.parent;
     while (parent != null)
     {
@@ -850,10 +837,10 @@ public class CameraScript : MonoBehaviour
       }
       parent = parent.parent;
     }
-
     return null;
   }
 
+  // - MARKER PLACEMENT SYSTEM
   void PlaceMarkerBesideCollider(GameObject evidenceObject, Collider hitCollider, Vector3 hitPoint)
   {
     if (markerPrefab == null)
@@ -861,13 +848,15 @@ public class CameraScript : MonoBehaviour
       Debug.LogError("No marker prefab assigned!");
       return;
     }
-
+    // Prevent placing multiple markers on the same object if placeOnlyOneMarker is true for non-fingerprints
+    if (markerByObject.ContainsKey(evidenceObject)) return;
+    // Calculate marker position based on collider bounds
     Bounds bounds = hitCollider.bounds;
     Vector3 markerPosition = bounds.center;
-
+    // Offset to side of evidence
     float sideOffset = bounds.extents.x + markerOffset;
     markerPosition.x += sideOffset;
-
+    // Set height based on ground or evidence position
     if (useGroundHeight && groundObject != null)
     {
       markerPosition.y = groundObject.position.y + groundHeightOffset;
@@ -876,165 +865,30 @@ public class CameraScript : MonoBehaviour
     {
       markerPosition.y = bounds.min.y + markerHeight;
     }
-
+    // Create and configure marker
     GameObject marker = Instantiate(markerPrefab, markerPosition, Quaternion.identity);
     marker.SetActive(true);
     marker.transform.localScale = Vector3.zero;
-
     markers.Add(marker);
     markerByObject[evidenceObject] = marker;
 
-    DontDestroyOnLoad(marker);
-
-    StartCoroutine(AnimateMarkerScale(marker.transform));
-
-    string displayName = GetEvidenceDisplayName(evidenceObject);
-    //Debug.Log("Placed marker at: " + markerPosition + " for evidence: " + displayName + " (" + evidenceObject.name + ")");
+    // Play marker scale-up animation
+    StartCoroutine(ScaleMarker(marker.transform));
   }
 
-  void FallbackEvidenceCheck()
+  IEnumerator ScaleMarker(Transform markerTransform)
   {
-    if (evidenceObjects.Count == 0) return;
-
-    //Debug.Log("Using fallback evidence detection method");
-
-    float xMin = 0.5f - (detectionFOVNarrow / 2);
-    float xMax = 0.5f + (detectionFOVNarrow / 2);
-    float yMin = 0.5f - (detectionFOVNarrow / 2);
-    float yMax = 0.5f + (detectionFOVNarrow / 2);
-
-    GameObject closestEvidence = null;
-    float closestDistance = float.MaxValue;
-
-    foreach (GameObject evidence in evidenceObjects)
-    {
-      if (evidence == null || !evidence.gameObject.activeInHierarchy) continue;
-
-      Vector3 screenPoint = secondCamera.WorldToViewportPoint(evidence.transform.position);
-      bool inNarrowView = screenPoint.z > 0 &&
-                          screenPoint.x > xMin && screenPoint.x < xMax &&
-                          screenPoint.y > yMin && screenPoint.y < yMax;
-
-      if (!inNarrowView) continue;
-      if (markerByObject.ContainsKey(evidence)) continue;
-
-      float distance = Vector3.Distance(secondCamera.transform.position, evidence.transform.position);
-
-      if (distance < closestDistance)
-      {
-        closestDistance = distance;
-        closestEvidence = evidence;
-      }
-    }
-
-    if (closestEvidence != null)
-    {
-      Vector3 position = closestEvidence.transform.position;
-      string displayName = GetEvidenceDisplayName(closestEvidence);
-      //Debug.Log("EVIDENCE FOUND (fallback): " + displayName + " (" + closestEvidence.name + ")");
-
-      bool isValidFingerprint = IsStrictValidFingerprint(closestEvidence);
-      if (isValidFingerprint)
-      {
-        Collider collider = closestEvidence.GetComponentInChildren<Collider>();
-        if (collider != null)
-        {
-          HandleFingerprintPhotography(closestEvidence, collider, position);
-        }
-        else
-        {
-          if (dustBrush != null)
-          {
-            float revealPercentage = dustBrush.GetFingerprintRevealPercentage(closestEvidence);
-            if (revealPercentage >= fingerprintRevealThreshold)
-            {
-              if (!photographedFingerprints.Contains(closestEvidence))
-              {
-                photographedFingerprints.Add(closestEvidence);
-                TurnFingerprintGreen(closestEvidence);
-              }
-            }
-          }
-          if (placeMarkersOnFingerprints)
-          {
-            PlaceMarker(closestEvidence, position);
-          }
-        }
-      }
-      else
-      {
-        Collider collider = closestEvidence.GetComponentInChildren<Collider>();
-        if (collider != null)
-        {
-          PlaceMarkerBesideCollider(closestEvidence, collider, position);
-        }
-        else
-        {
-          PlaceMarker(closestEvidence, position);
-        }
-        // NEW: Notify EvidenceChecklist for non-fingerprint evidence (fallback)
-        EvidenceChecklist checklist = FindObjectOfType<EvidenceChecklist>();
-        if (checklist != null)
-        {
-          checklist.MarkEvidenceAsPhotographed(GetEvidenceDisplayName(closestEvidence));
-        }
-      }
-    }
-  }
-
-  void PlaceMarker(GameObject evidence, Vector3 position)
-  {
-    if (markerPrefab == null)
-    {
-      Debug.LogError("No marker prefab assigned!");
-      return;
-    }
-
-    Vector3 markerPosition = position;
-    markerPosition.x += markerOffset;
-
-    if (useGroundHeight && groundObject != null)
-    {
-      markerPosition.y = groundObject.position.y + groundHeightOffset;
-    }
-    else
-    {
-      markerPosition.y += markerHeight;
-    }
-
-    GameObject marker = Instantiate(markerPrefab, markerPosition, Quaternion.identity);
-    marker.SetActive(true);
-    marker.transform.localScale = Vector3.zero;
-
-    markers.Add(marker);
-    markerByObject[evidence] = marker;
-
-    DontDestroyOnLoad(marker);
-
-    StartCoroutine(AnimateMarkerScale(marker.transform));
-
-    //Debug.Log("Placed marker at: " + markerPosition);
-  }
-
-  IEnumerator AnimateMarkerScale(Transform markerTransform)
-  {
-    if (markerTransform == null) yield break;
-
+    float timer = 0f;
+    Vector3 initialScale = Vector3.zero;
     Vector3 targetScale = Vector3.one * markerSize;
-    float startTime = Time.time;
 
-    while (Time.time < startTime + scaleDuration && markerTransform != null)
+    while (timer < scaleDuration)
     {
-      float t = (Time.time - startTime) / scaleDuration;
-      float smoothT = Mathf.SmoothStep(0, 1, t);
-      markerTransform.localScale = Vector3.Lerp(Vector3.zero, targetScale, smoothT);
+      timer += Time.deltaTime;
+      markerTransform.localScale = Vector3.Lerp(initialScale, targetScale, timer / scaleDuration);
       yield return null;
     }
-
-    if (markerTransform != null)
-    {
-      markerTransform.localScale = targetScale;
-    }
+    markerTransform.localScale = targetScale;
   }
 
   public void ClearMarkers()
@@ -1046,80 +900,23 @@ public class CameraScript : MonoBehaviour
         Destroy(marker);
       }
     }
-
     markers.Clear();
     markerByObject.Clear();
-    //Debug.Log("CameraScript: All markers cleared");
   }
 
-  public void ResetFingerprints()
+  // - PUBLIC API METHODS
+  public string GetEvidenceDisplayName(GameObject obj)
   {
-    foreach (var kvp in fingerprintOriginalMaterials)
+    if (obj == null) return "Unknown";
+    if (evidenceObjectNames.TryGetValue(obj, out string displayName))
     {
-      GameObject fingerprint = kvp.Key;
-      Material originalMaterial = kvp.Value;
-
-      if (fingerprint != null && originalMaterial != null)
-      {
-        Renderer renderer = fingerprint.GetComponent<Renderer>();
-        if (renderer == null)
-        {
-          renderer = fingerprint.GetComponentInChildren<Renderer>();
-        }
-
-        if (renderer != null)
-        {
-          renderer.material = originalMaterial;
-        }
-      }
+      return displayName;
     }
-
-    photographedFingerprints.Clear();
-    fingerprintOriginalMaterials.Clear();
-    //Debug.Log("CameraScript: Reset all fingerprints to original state");
+    return CleanObjectName(obj.name);
   }
 
-  // Public API methods
-  public int GetEvidenceObjectCount() => evidenceObjects.Count;
-  public int GetMarkerCount() => markers.Count;
-  public Dictionary<GameObject, GameObject> GetMarkerByObject() => new Dictionary<GameObject, GameObject>(markerByObject);
-  public Dictionary<GameObject, string> GetEvidenceObjectNames() => new Dictionary<GameObject, string>(evidenceObjectNames);
-
-  // Fingerprint API - CRITICAL FOR EVIDENCECHECKLIST
-  public int GetPhotographedFingerprintCount() => photographedFingerprints.Count;
-  public bool IsFingerprintPhotographed(GameObject fingerprint) => photographedFingerprints.Contains(fingerprint);
-  public HashSet<GameObject> GetPhotographedFingerprints() => new HashSet<GameObject>(photographedFingerprints);
-
-  public string GetEvidenceDisplayName(GameObject evidenceObj)
+  public string[] GetUniqueEvidenceDisplayNames()
   {
-    if (evidenceObjectNames.ContainsKey(evidenceObj))
-    {
-      return evidenceObjectNames[evidenceObj];
-    }
-    // If not in our dictionary, try to clean the name directly
-    return CleanObjectName(evidenceObj.name);
-  }
-
-  public string[] GetCurrentTargetNames()
-  {
-    // Prioritize manual list if enabled
-    if (useManualEvidenceList && manualEvidenceObjects != null)
-    {
-      return manualEvidenceObjects.Where(obj => obj != null).Select(obj => CleanObjectName(obj.name)).ToArray();
-    }
-    else if (sceneGenerator != null)
-    {
-      try
-      {
-        string[] names = sceneGenerator.GetCurrentSceneEvidenceNames();
-        return names ?? new string[0];
-      }
-      catch (System.Exception e)
-      {
-        Debug.LogWarning("CameraScript: Error getting evidence names: " + e.Message);
-      }
-    }
-
     HashSet<string> uniqueNames = new HashSet<string>();
     foreach (GameObject obj in evidenceObjects)
     {
@@ -1136,85 +933,100 @@ public class CameraScript : MonoBehaviour
     return evidenceObjects.ToArray();
   }
 
+  public HashSet<GameObject> GetPhotographedFingerprints()
+  {
+    return photographedFingerprints;
+  }
+
+  public bool IsFingerprintPhotographed(GameObject fingerprint)
+  {
+    return photographedFingerprints.Contains(fingerprint);
+  }
+
+  public void RemovePhotographedFingerprint(GameObject fingerprint)
+  {
+    if (photographedFingerprints.Contains(fingerprint))
+    {
+      photographedFingerprints.Remove(fingerprint);
+      // Optionally revert material here if needed
+      if (fingerprintOriginalMaterials.ContainsKey(fingerprint))
+      {
+        Renderer renderer = fingerprint.GetComponent<Renderer>();
+        if (renderer == null)
+        {
+          renderer = fingerprint.GetComponentInChildren<Renderer>();
+        }
+        if (renderer != null)
+        {
+          renderer.material = fingerprintOriginalMaterials[fingerprint];
+        }
+        fingerprintOriginalMaterials.Remove(fingerprint);
+      }
+    }
+  }
+
+  public void ResetPhotographedFingerprints()
+  {
+    foreach (GameObject fp in photographedFingerprints)
+    {
+      if (fp != null && fingerprintOriginalMaterials.ContainsKey(fp))
+      {
+        Renderer renderer = fp.GetComponent<Renderer>();
+        if (renderer == null)
+        {
+          renderer = fp.GetComponentInChildren<Renderer>();
+        }
+        if (renderer != null)
+        {
+          renderer.material = fingerprintOriginalMaterials[fp];
+        }
+      }
+    }
+    photographedFingerprints.Clear();
+    fingerprintOriginalMaterials.Clear();
+  }
+
+  // - EDITOR CONTEXT MENU METHODS
   [ContextMenu("Force Refresh Evidence")]
   public void ForceRefreshEvidence()
   {
     PopulateEvidenceObjects();
-    //Debug.Log("Force refreshed - found " + evidenceObjects.Count + " evidence objects");
   }
 
   [ContextMenu("Show Current Evidence")]
   public void ShowCurrentEvidence()
   {
-    //Debug.Log("=== CURRENT EVIDENCE STATUS ===");
-    //Debug.Log("Evidence Objects: " + evidenceObjects.Count);
     foreach (GameObject item in evidenceObjects)
     {
       if (item != null)
       {
         string displayName = GetEvidenceDisplayName(item);
         bool isPhotographed = photographedFingerprints.Contains(item);
-        //Debug.Log("  - " + displayName + " (" + item.name + ") (Active: " + item.gameObject.activeInHierarchy + ") (Photographed: " + isPhotographed + ")");
-      }
-      else
-      {
-        //Debug.Log("  - NULL");
-      }
-    }
-    //Debug.Log("Markers Placed: " + markers.Count);
-    //Debug.Log("Fingerprints Photographed: " + photographedFingerprints.Count);
-    //Debug.Log("=================================");
-  }
-
-  // DEBUG METHOD: Test fingerprint detection
-  [ContextMenu("Debug: Test Fingerprint Detection")]
-  public void DebugTestFingerprintDetection()
-  {
-    //Debug.Log("=== TESTING FINGERPRINT DETECTION ===");
-
-    // Find all objects that might be fingerprints
-    GameObject[] allObjects = FindObjectsOfType<GameObject>();
-    int validFingerprints = 0;
-
-    foreach (GameObject obj in allObjects)
-    {
-      if (obj != null && obj.activeInHierarchy)
-      {
-        // Check if it has any fingerprint-related properties
-        bool hasTag = obj.CompareTag("Fingerprint");
-        bool hasName = obj.name.ToLower().Contains("fingerprint");
-        bool onUVLayer = obj.layer == LayerMask.NameToLayer("UV");
-
-        if (hasTag || hasName || onUVLayer)
-        {
-          bool isValid = IsStrictValidFingerprint(obj);
-          if (isValid) validFingerprints++;
-
-          //Debug.Log($"{(isValid ? "✓ VALID" : "✗ INVALID")}: {obj.name}");
-          //Debug.Log($"  Tag: {hasTag} ('{obj.tag}')");
-          //Debug.Log($"  Layer: {onUVLayer} ('{LayerMask.LayerToName(obj.layer)}')");
-          //Debug.Log($"  Name contains 'fingerprint': {hasName}");
-
-          if (isValid)
-          {
-            bool isPhotographed = photographedFingerprints.Contains(obj);
-            // Original code ended here, no change needed as per user request.
-          }
-        }
+        Debug.Log($"Evidence: {displayName}, Photographed: {isPhotographed}, Marked: {markerByObject.ContainsKey(item)}");
       }
     }
   }
 
+  // - UTILITY METHODS
   private string CleanObjectName(string objectName)
   {
     if (string.IsNullOrEmpty(objectName)) return "Unknown";
 
+    // Remove clone suffix and clean formatting
     string cleanName = objectName.Replace("(Clone)", "").Trim();
     cleanName = cleanName.Replace("_", " ");
+
+    // Capitalize first letter
     if (cleanName.Length > 0)
     {
       cleanName = char.ToUpper(cleanName[0]) + cleanName.Substring(1);
     }
+
     return cleanName;
+  }
+
+  void FallbackEvidenceCheck()
+  {
+    // If no direct hit is found, target the nearest valid evidence
   }
 }

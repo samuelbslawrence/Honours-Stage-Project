@@ -3,11 +3,13 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
-using System.Linq; // Required for OrderBy
-using UnityEngine.XR; // Required for XR Input
+using System.Linq;
+using UnityEngine.XR;
 
+// - EVIDENCE CHECKLIST MAIN CLASS
 public class EvidenceChecklist : MonoBehaviour
 {
+  // - INSPECTOR CONFIGURATION
   [Header("Checklist Settings")]
   [SerializeField] private Transform attachPoint;
   [SerializeField] private Vector3 positionOffset = new Vector3(0.05f, 0.5f, 0.05f);
@@ -23,13 +25,12 @@ public class EvidenceChecklist : MonoBehaviour
 
   [Header("Box Trigger Detection")]
   [SerializeField] private bool trackFingerprints = true;
-  [SerializeField] private bool debugBoxDetection = true;
   [SerializeField] private float monitoringRate = 0.2f;
   [SerializeField] private string requiredFingerprintTag = "Fingerprint";
   [SerializeField] private string requiredLayerName = "UV";
   [SerializeField] private SceneFingerprintDetector sceneFingerprintDetector;
   [SerializeField] private bool autoFindBoxDetector = true;
-  [SerializeField] private float fingerprintDetectionRadius = 100f; // NEW: Radius for fingerprint detection
+  [SerializeField] private float fingerprintDetectionRadius = 100f;
 
   [Header("Fingerprint Monitor Integration")]
   [Tooltip("If true, the checklist will primarily identify fingerprints by the presence of the FingerprintMonitor script.")]
@@ -67,14 +68,18 @@ public class EvidenceChecklist : MonoBehaviour
   [SerializeField] private float itemHeight = 60f;
   [SerializeField] private Color itemBackgroundColor = new Color(0.15f, 0.15f, 0.15f, 0.7f);
   [SerializeField] private string bulletPointSymbol = "• ";
-  [SerializeField] private bool excludeFingerprintsFromList = false; // NEW: Toggle to exclude fingerprints from the main list
+  [SerializeField] private bool excludeFingerprintsFromList = false;
 
-  [Header("Audio Settings")] //
-  [SerializeField] private AudioSource audioSource; //
-  [SerializeField] private AudioClip openChecklistSound; //
+  [Header("Audio Settings")]
+  [SerializeField] private AudioSource audioSource;
+  [SerializeField] private AudioClip openChecklistSound;
 
+  // - STATE VARIABLES
+  // UI state management
   private GameObject checklistInstance;
   private bool isChecklistVisible = false;
+
+  // Evidence tracking
   private List<string> evidenceNames = new List<string>();
   private List<bool> evidenceFound = new List<bool>();
   private List<bool> evidencePhotographed = new List<bool>();
@@ -82,26 +87,32 @@ public class EvidenceChecklist : MonoBehaviour
   private List<TextMeshProUGUI> checklistTexts = new List<TextMeshProUGUI>();
   private List<Image> checklistImages = new List<Image>();
 
+  // Fingerprint tracking
   private TextMeshProUGUI fingerprintInfoTextComponent;
-
   private HashSet<GameObject> fingerprintsInBox = new HashSet<GameObject>();
   private HashSet<GameObject> lastKnownPhotographedFingerprints = new HashSet<GameObject>();
   private Dictionary<GameObject, string> fingerprintGameObjectToUniqueId = new Dictionary<GameObject, string>();
   private Dictionary<string, string> fingerprintUniqueIdToDisplayName = new Dictionary<string, string>();
 
+  // Fingerprint counters
   private int totalFingerprints = 0;
   private int photographedFingerprintCount = 0;
 
+  // VR input handling
   private List<UnityEngine.XR.InputDevice> rightControllers = new List<UnityEngine.XR.InputDevice>();
   private bool wasAPressed = false;
 
+  // Constants
   private readonly Vector3 initialSpawnPosition = new Vector3(0, -1000, 0);
 
+  // - SINGLETON IMPLEMENTATION
   private static EvidenceChecklist instance;
   public static EvidenceChecklist Instance => instance;
 
+  // - UNITY LIFECYCLE METHODS
   void Awake()
   {
+    // Singleton pattern enforcement
     if (instance != null && instance != this)
     {
       Destroy(gameObject);
@@ -114,26 +125,29 @@ public class EvidenceChecklist : MonoBehaviour
   {
     if (instance != this) return;
 
+    // Initialize all components and systems
     FindRequiredComponents();
     FindSceneGenerator();
     FindToolSpawner();
     FindBoxDetector();
+
+    // Setup audio source
+    if (audioSource == null)
+    {
+      audioSource = GetComponent<AudioSource>();
+      if (audioSource == null)
+      {
+        audioSource = gameObject.AddComponent<AudioSource>();
+      }
+    }
+    audioSource.playOnAwake = false;
+    audioSource.spatialBlend = 0.0f;
+
+    // Initial evidence setup and UI creation
     InitializeEvidence();
     CreateChecklistUI();
 
-    // NEW: Find or add AudioSource
-    if (audioSource == null) //
-    {
-      audioSource = GetComponent<AudioSource>(); //
-      if (audioSource == null) //
-      {
-        audioSource = gameObject.AddComponent<AudioSource>(); //
-      }
-    }
-    // Set some default AudioSource settings (optional)
-    audioSource.playOnAwake = false; //
-    audioSource.spatialBlend = 0.0f; // Make it 2D UI sound
-
+    // Start monitoring coroutines
     if (updateOnSceneGeneration && sceneGenerator != null)
     {
       StartCoroutine(MonitorSceneGeneration());
@@ -151,23 +165,11 @@ public class EvidenceChecklist : MonoBehaviour
     }
   }
 
-  void OnDestroy()
-  {
-    if (instance == this)
-    {
-      instance = null;
-    }
-
-    if (checklistInstance != null)
-    {
-      Destroy(checklistInstance);
-    }
-  }
-
   void Update()
   {
     if (instance != this) return;
 
+    // Handle input if not synced with tool spawner
     if (!syncWithToolSpawner)
     {
       if (Input.GetKeyDown(toggleKey)) ToggleChecklist();
@@ -177,19 +179,76 @@ public class EvidenceChecklist : MonoBehaviour
       wasAPressed = isAPressed;
     }
 
+    // Update UI transform if visible
     if (checklistInstance != null && isChecklistVisible)
     {
       UpdateChecklistTransform();
     }
 
+    // Real-time evidence checking
     if (enableRealTimeUpdates && Time.time > updateCheckRate)
     {
       CheckForNewlyFoundEvidence();
     }
   }
 
+  void OnDestroy()
+  {
+    // Cleanup singleton reference
+    if (instance == this)
+    {
+      instance = null;
+    }
+
+    // Cleanup UI instance
+    if (checklistInstance != null)
+    {
+      Destroy(checklistInstance);
+    }
+  }
+
+  // - COMPONENT SETUP
+  private void FindRequiredComponents()
+  {
+    // Find camera script reference
+    if (cameraScript == null)
+    {
+      cameraScript = FindObjectOfType<CameraScript>();
+    }
+
+    // Find attachment point for UI
+    if (attachPoint == null)
+    {
+      GameObject leftController = GameObject.Find("LeftHandAnchor") ?? GameObject.Find("LeftHand");
+      attachPoint = leftController?.transform ?? Camera.main.transform;
+    }
+  }
+
+  private void FindSceneGenerator()
+  {
+    // Locate scene generator component
+    if (autoFindSceneGenerator && sceneGenerator == null)
+    {
+      sceneGenerator = FindObjectOfType<CrimeSceneGenerator>();
+      if (sceneGenerator == null)
+      {
+        useManualEvidenceList = true;
+      }
+    }
+  }
+
+  private void FindToolSpawner()
+  {
+    // Locate tool spawner component
+    if (autoFindToolSpawner && toolSpawner == null)
+    {
+      toolSpawner = FindObjectOfType<ToolSpawner>();
+    }
+  }
+
   private void FindBoxDetector()
   {
+    // Locate fingerprint detector component
     if (autoFindBoxDetector && sceneFingerprintDetector == null)
     {
       sceneFingerprintDetector = FindObjectOfType<SceneFingerprintDetector>();
@@ -200,208 +259,131 @@ public class EvidenceChecklist : MonoBehaviour
     }
   }
 
-  private IEnumerator BoxTriggerMonitoring()
+  // - EVIDENCE INITIALIZATION
+  private void InitializeEvidence()
   {
-    while (trackFingerprints && instance == this)
-    {
-      yield return new WaitForSeconds(monitoringRate);
-
-      if (cameraScript != null)
-      {
-        HashSet<GameObject> currentPhotographedFingerprints = cameraScript.GetPhotographedFingerprints();
-
-        foreach (GameObject fingerprint in currentPhotographedFingerprints)
-        {
-          if (fingerprint != null &&
-              fingerprintsInBox.Contains(fingerprint) &&
-              !lastKnownPhotographedFingerprints.Contains(fingerprint))
-          {
-            HandleNewlyPhotographedFingerprint(fingerprint);
-          }
-        }
-      }
-
-      if (Time.frameCount % 50 == 0)
-      {
-        ScanFingerprintsInBox();
-      }
-    }
-  }
-
-  public void HandleNewlyPhotographedFingerprint(GameObject fingerprint)
-  {
-    if (fingerprint == null)
-    {
-      return;
-    }
-
-    // Ensure the fingerprint is valid and within the tracking box (which now includes radius check)
-    if (IsValidFingerprint(fingerprint) && fingerprintsInBox.Contains(fingerprint))
-    {
-      string uniqueFingerprintId = GetUniqueFingerprintId(fingerprint);
-
-      if (!lastKnownPhotographedFingerprints.Contains(fingerprint))
-      {
-        lastKnownPhotographedFingerprints.Add(fingerprint);
-        photographedFingerprintCount++;
-
-        if (evidenceNameToIndex.TryGetValue(uniqueFingerprintId, out int index))
-        {
-          if (!evidencePhotographed[index])
-          {
-            evidencePhotographed[index] = true;
-          }
-        }
-
-        if (isChecklistVisible)
-        {
-          UpdateChecklistUI();
-        }
-
-        if (fingerprintInfoTextComponent != null)
-        {
-          string percentage = (totalFingerprints > 0)
-              ? $"({(float)photographedFingerprintCount / totalFingerprints:P0})"
-              : "(0%)";
-          fingerprintInfoTextComponent.text = $"FINGERPRINTS: {photographedFingerprintCount}/{totalFingerprints} {percentage}";
-        }
-      }
-    }
-  }
-
-  public void MarkEvidenceAsPhotographed(string evidenceId)
-  {
-    if (evidenceId.StartsWith("Fingerprint_"))
-    {
-      return;
-    }
-
-    if (evidenceNameToIndex.TryGetValue(evidenceId, out int index))
-    {
-      if (!evidencePhotographed[index])
-      {
-        evidencePhotographed[index] = true;
-        evidenceFound[index] = true;
-        UpdateChecklistUI();
-      }
-    }
-  }
-
-  private void ScanFingerprintsInBox()
-  {
-    fingerprintsInBox.Clear();
-    fingerprintGameObjectToUniqueId.Clear();
+    // Clear existing evidence data
+    evidenceNames.Clear();
+    evidenceFound.Clear();
+    evidencePhotographed.Clear();
+    evidenceNameToIndex.Clear();
     fingerprintUniqueIdToDisplayName.Clear();
 
-    // Determine the origin for radius check. If sceneGenerator is null, use world origin.
-    Vector3 originPoint = (sceneGenerator != null) ? sceneGenerator.transform.position : Vector3.zero;
-
-    // Use FindObjectsOfType<FingerprintMonitor>() for efficiency if useFingerprintMonitorScript is true
-    // Otherwise, iterate through all GameObjects (less efficient but covers more cases)
-    if (useFingerprintMonitorScript)
+    // Re-scan fingerprints as part of initialization
+    if (trackFingerprints)
     {
-      FingerprintMonitor[] monitors = FindObjectsOfType<FingerprintMonitor>();
+      ScanFingerprintsInBox();
+    }
 
-      foreach (FingerprintMonitor monitor in monitors)
+    // Add fingerprints to evidence list if not excluded
+    if (trackFingerprints && !excludeFingerprintsFromList)
+    {
+      foreach (GameObject fp in fingerprintsInBox)
       {
-        GameObject obj = monitor.gameObject;
-        // Apply all checks here: IsValidFingerprint (now includes MeshRenderer and activeInHierarchy)
-        // AND radius check
-        if (IsValidFingerprint(obj) && Vector3.Distance(obj.transform.position, originPoint) <= fingerprintDetectionRadius)
+        string uniqueId = GetUniqueFingerprintId(fp);
+        if (!evidenceNameToIndex.ContainsKey(uniqueId))
         {
-          fingerprintsInBox.Add(obj);
-          string uniqueId = GetUniqueFingerprintId(obj);
-          fingerprintGameObjectToUniqueId[obj] = uniqueId;
-          fingerprintUniqueIdToDisplayName[uniqueId] = GetFingerprintDisplayName(obj);
+          evidenceNames.Add(uniqueId);
+          evidenceFound.Add(false);
+          evidencePhotographed.Add(false);
+          evidenceNameToIndex[uniqueId] = evidenceNames.Count - 1;
+          fingerprintUniqueIdToDisplayName[uniqueId] = GetFingerprintDisplayName(fp);
         }
       }
+    }
+
+    // Add other evidence from best available source
+    string[] otherEvidenceNames = GetEvidenceNamesFromBestSource();
+    if (otherEvidenceNames != null)
+    {
+      foreach (string name in otherEvidenceNames)
+      {
+        if (!string.IsNullOrEmpty(name) && !evidenceNameToIndex.ContainsKey(name))
+        {
+          evidenceNames.Add(name);
+          evidenceFound.Add(false);
+          evidencePhotographed.Add(false);
+          evidenceNameToIndex[name] = evidenceNames.Count - 1;
+        }
+      }
+    }
+
+    // Fallback evidence if no evidence found
+    if (evidenceNames.Count == 0)
+    {
+      foreach (string name in new string[] { "Bottle 1", "Bottle 2", "Bottle 3", "Glass", "Knife" })
+      {
+        evidenceNames.Add(name);
+        evidenceFound.Add(false);
+        evidencePhotographed.Add(false);
+        evidenceNameToIndex[name] = evidenceNames.Count - 1;
+      }
+    }
+  }
+
+  private string[] GetEvidenceNamesFromBestSource()
+  {
+    // Get evidence names from scene generator or manual list
+    if (!useManualEvidenceList && sceneGenerator != null)
+    {
+      try
+      {
+        string[] currentSceneNames = sceneGenerator.GetCurrentSceneEvidenceNames();
+        if (currentSceneNames != null && currentSceneNames.Length > 0)
+        {
+          return currentSceneNames;
+        }
+      }
+      catch (System.Exception)
+      {
+        // Fallback to manual list if sceneGenerator fails
+      }
+    }
+    if (useManualEvidenceList)
+    {
+      return evidenceItemNames;
+    }
+    return new string[0];
+  }
+
+  // - FINGERPRINT VALIDATION
+  private bool IsValidFingerprint(GameObject obj)
+  {
+    // Ensure object is not null, is active, and has a MeshRenderer
+    if (obj == null || !obj.activeInHierarchy || obj.GetComponent<MeshRenderer>() == null) return false;
+
+    // Check for fingerprint monitor script if enabled
+    if (useFingerprintMonitorScript)
+    {
+      return obj.GetComponent<FingerprintMonitor>() != null;
     }
     else
     {
-      List<GameObject> objectsToCheck = new List<GameObject>();
-
-      if (sceneFingerprintDetector != null)
-      {
-        // This path uses SceneFingerprintDetector.GetDetectedFingerprints()
-        // We will still apply the MeshRenderer check and radius check on its output.
-        List<GameObject> objectsFromDetector = sceneFingerprintDetector.GetDetectedFingerprints();
-        objectsToCheck.AddRange(objectsFromDetector);
-      }
-      else
-      {
-        // Fallback: search all GameObjects in the scene
-        GameObject[] allObjects = FindObjectsOfType<GameObject>();
-        foreach (GameObject obj in allObjects)
-        {
-          objectsToCheck.Add(obj);
-        }
-      }
-
-      foreach (GameObject obj in objectsToCheck)
-      {
-        // Apply all checks here: IsValidFingerprint (now includes MeshRenderer and activeInHierarchy)
-        // AND radius check
-        if (IsValidFingerprint(obj) && Vector3.Distance(obj.transform.position, originPoint) <= fingerprintDetectionRadius)
-        {
-          fingerprintsInBox.Add(obj);
-          string uniqueId = GetUniqueFingerprintId(obj);
-          fingerprintGameObjectToUniqueId[obj] = uniqueId;
-          fingerprintUniqueIdToDisplayName[uniqueId] = GetFingerprintDisplayName(obj);
-        }
-      }
-    }
-
-    totalFingerprints = fingerprintsInBox.Count;
-
-    if (isChecklistVisible)
-    {
-      UpdateChecklistUI();
-    }
-  }
-
-  /// <summary>
-  /// Checks if a GameObject is a valid fingerprint based on tag, layer, script, and active state.
-  /// Does NOT include radius check, as that depends on sceneGenerator.
-  /// </summary>
-  /// <param name="obj">The GameObject to check.</param>
-  /// <returns>True if the GameObject meets the criteria for a valid fingerprint, false otherwise.</returns>
-  private bool IsValidFingerprint(GameObject obj)
-  {
-    if (obj == null || !obj.activeInHierarchy) return false; // Must be active
-
-    // Must have a MeshRenderer component
-    if (obj.GetComponent<MeshRenderer>() == null) return false;
-
-    // Check for FingerprintMonitor script if that option is enabled
-    if (useFingerprintMonitorScript)
-    {
-      if (obj.GetComponent<FingerprintMonitor>() == null) return false;
-    }
-    else // Fallback to tag/layer/name checks if not using FingerprintMonitor script
-    {
+      // Fallback to strict tag/layer/name validation
       bool hasCorrectTag = obj.CompareTag(requiredFingerprintTag);
       int uvLayerIndex = LayerMask.NameToLayer(requiredLayerName);
       bool onCorrectLayer = uvLayerIndex != -1 && obj.layer == uvLayerIndex;
       string objName = obj.name;
-      bool hasCorrectName = objName == "Fingerprint" ||
-                            (objName.StartsWith("Fingerprint (") && objName.EndsWith(")") && objName.Length > "Fingerprint (".Length + 1);
+      bool hasCorrectName = objName.StartsWith("Fingerprint") && (objName.Length == "Fingerprint".Length || (objName.Contains("(") && objName.EndsWith(")")));
 
-      if (!(hasCorrectTag && onCorrectLayer && hasCorrectName)) return false;
+      return hasCorrectTag && onCorrectLayer && hasCorrectName;
     }
-
-    return true;
   }
 
+  // - FINGERPRINT IDENTIFICATION
   private string GetUniqueFingerprintId(GameObject fingerprint)
   {
+    // Generate unique ID for fingerprint
     if (fingerprint == null) return "NullFingerprint";
     return $"Fingerprint_{fingerprint.name}_{fingerprint.GetInstanceID()}";
   }
 
   private string GetFingerprintDisplayName(GameObject fingerprint)
   {
+    // Generate display name for fingerprint
     if (fingerprint == null) return "Unknown Fingerprint";
 
+    // Use parent name if available
     if (fingerprint.transform.parent != null)
     {
       string parentName = fingerprint.transform.parent.name.Replace("(Clone)", "").Trim();
@@ -413,6 +395,7 @@ public class EvidenceChecklist : MonoBehaviour
       return $"{parentName} Fingerprint";
     }
 
+    // Extract number from fingerprint name
     string fingerprintName = fingerprint.name;
     if (fingerprintName.Contains("(") && fingerprintName.Contains(")"))
     {
@@ -428,22 +411,154 @@ public class EvidenceChecklist : MonoBehaviour
     return "Fingerprint";
   }
 
-  public void OnFingerprintEnteredBox(GameObject fingerprint)
+  // - FINGERPRINT SCANNING
+  private void ScanFingerprintsInBox()
   {
-    // This method is likely called by an external trigger box.
-    // We still need to validate the fingerprint against all criteria.
+    // Clear existing fingerprint data to avoid stale entries
+    fingerprintsInBox.Clear();
+    fingerprintGameObjectToUniqueId.Clear();
+
     Vector3 originPoint = (sceneGenerator != null) ? sceneGenerator.transform.position : Vector3.zero;
 
+    // Use a temporary HashSet to collect valid fingerprints before assigning
+    HashSet<GameObject> currentScanResults = new HashSet<GameObject>();
+
+    if (useFingerprintMonitorScript)
+    {
+      // Find all FingerprintMonitor scripts in the scene
+      FingerprintMonitor[] monitors = FindObjectsOfType<FingerprintMonitor>();
+
+      foreach (FingerprintMonitor monitor in monitors)
+      {
+        GameObject obj = monitor.gameObject;
+        if (IsValidFingerprint(obj) && Vector3.Distance(obj.transform.position, originPoint) <= fingerprintDetectionRadius)
+        {
+          currentScanResults.Add(obj);
+          string uniqueId = GetUniqueFingerprintId(obj);
+          fingerprintGameObjectToUniqueId[obj] = uniqueId;
+          if (!fingerprintUniqueIdToDisplayName.ContainsKey(uniqueId))
+          {
+            fingerprintUniqueIdToDisplayName[uniqueId] = GetFingerprintDisplayName(obj);
+          }
+        }
+      }
+    }
+    else
+    {
+      // Fallback to finding all GameObjects and filtering
+      List<GameObject> objectsToCheck = new List<GameObject>();
+
+      if (sceneFingerprintDetector != null)
+      {
+        List<GameObject> objectsFromDetector = sceneFingerprintDetector.GetDetectedFingerprints();
+        if (objectsFromDetector != null)
+        {
+          objectsToCheck.AddRange(objectsFromDetector);
+        }
+      }
+      else
+      {
+        // Last resort: find all GameObjects by tag/layer
+        GameObject[] allTaggedObjects = GameObject.FindGameObjectsWithTag(requiredFingerprintTag);
+        int uvLayer = LayerMask.NameToLayer(requiredLayerName);
+        foreach (GameObject obj in allTaggedObjects)
+        {
+          if (uvLayer == -1 || obj.layer == uvLayer)
+          {
+            objectsToCheck.Add(obj);
+          }
+        }
+      }
+
+      foreach (GameObject obj in objectsToCheck)
+      {
+        if (IsValidFingerprint(obj) && Vector3.Distance(obj.transform.position, originPoint) <= fingerprintDetectionRadius)
+        {
+          currentScanResults.Add(obj);
+          string uniqueId = GetUniqueFingerprintId(obj);
+          fingerprintGameObjectToUniqueId[obj] = uniqueId;
+          if (!fingerprintUniqueIdToDisplayName.ContainsKey(uniqueId))
+          {
+            fingerprintUniqueIdToDisplayName[uniqueId] = GetFingerprintDisplayName(obj);
+          }
+        }
+      }
+    }
+
+    // Assign the unique and valid fingerprints to the main tracking HashSet
+    fingerprintsInBox = currentScanResults;
+    totalFingerprints = fingerprintsInBox.Count;
+
+    if (isChecklistVisible)
+    {
+      UpdateChecklistUI();
+    }
+  }
+
+  // - FINGERPRINT PHOTOGRAPHY TRACKING
+  public void HandleNewlyPhotographedFingerprint(GameObject fingerprint)
+  {
+    // Process newly photographed fingerprint
+    if (fingerprint == null)
+    {
+      return;
+    }
+
+    // Ensure it's a valid fingerprint and currently in the tracked set
+    if (IsValidFingerprint(fingerprint) && fingerprintsInBox.Contains(fingerprint))
+    {
+      string uniqueFingerprintId = GetUniqueFingerprintId(fingerprint);
+
+      // Check if this specific fingerprint was not already marked as photographed
+      if (!lastKnownPhotographedFingerprints.Contains(fingerprint))
+      {
+        lastKnownPhotographedFingerprints.Add(fingerprint);
+        photographedFingerprintCount++;
+
+        // Mark in the main evidence list if it's there
+        if (evidenceNameToIndex.TryGetValue(uniqueFingerprintId, out int index))
+        {
+          if (!evidencePhotographed[index])
+          {
+            evidencePhotographed[index] = true;
+            evidenceFound[index] = true;
+          }
+        }
+
+        // Refresh UI if visible
+        if (isChecklistVisible)
+        {
+          UpdateChecklistUI();
+        }
+
+        // Update fingerprint info text immediately
+        if (fingerprintInfoTextComponent != null)
+        {
+          string percentage = (totalFingerprints > 0) ? $"({(float)photographedFingerprintCount / totalFingerprints:P0})" : "(0%)";
+          fingerprintInfoTextComponent.text = $"FINGERPRINTS: {photographedFingerprintCount}/{totalFingerprints} {percentage}";
+        }
+      }
+    }
+  }
+
+  public void MarkFingerprintAsPhotographedPublic(GameObject fingerprint)
+  {
+    // Public interface for marking fingerprint as photographed
+    HandleNewlyPhotographedFingerprint(fingerprint);
+  }
+
+  // - FINGERPRINT BOX EVENTS
+  public void OnFingerprintEnteredBox(GameObject fingerprint)
+  {
+    Vector3 originPoint = (sceneGenerator != null) ? sceneGenerator.transform.position : Vector3.zero;
     if (IsValidFingerprint(fingerprint) && Vector3.Distance(fingerprint.transform.position, originPoint) <= fingerprintDetectionRadius)
     {
-      if (!fingerprintsInBox.Contains(fingerprint))
+      if (fingerprintsInBox.Add(fingerprint))
       {
-        fingerprintsInBox.Add(fingerprint);
         string uniqueId = GetUniqueFingerprintId(fingerprint);
         fingerprintGameObjectToUniqueId[fingerprint] = uniqueId;
         fingerprintUniqueIdToDisplayName[uniqueId] = GetFingerprintDisplayName(fingerprint);
-
-        totalFingerprints = fingerprintsInBox.Count; // Recalculate total after adding
+        totalFingerprints = fingerprintsInBox.Count;
 
         if (cameraScript != null && cameraScript.IsFingerprintPhotographed(fingerprint))
         {
@@ -460,18 +575,13 @@ public class EvidenceChecklist : MonoBehaviour
 
   public void OnFingerprintExitedBox(GameObject fingerprint)
   {
-    // When a fingerprint exits the box, we simply remove it from our tracking,
-    // regardless of its validity or distance, as it's no longer "in the box".
-    if (fingerprintsInBox.Contains(fingerprint))
+    if (fingerprintsInBox.Remove(fingerprint))
     {
-      fingerprintsInBox.Remove(fingerprint);
       string uniqueId = GetUniqueFingerprintId(fingerprint);
       fingerprintGameObjectToUniqueId.Remove(fingerprint);
       fingerprintUniqueIdToDisplayName.Remove(uniqueId);
       lastKnownPhotographedFingerprints.Remove(fingerprint);
-
-      totalFingerprints = fingerprintsInBox.Count; // Recalculate total after removing
-
+      totalFingerprints = fingerprintsInBox.Count;
       if (isChecklistVisible)
       {
         UpdateChecklistUI();
@@ -479,16 +589,10 @@ public class EvidenceChecklist : MonoBehaviour
     }
   }
 
-  private void FindToolSpawner()
-  {
-    if (autoFindToolSpawner && toolSpawner == null)
-    {
-      toolSpawner = FindObjectOfType<ToolSpawner>();
-    }
-  }
-
+  // - REAL-TIME MONITORING
   IEnumerator RealTimeFoundEvidenceMonitoring()
   {
+    // Monitor for newly found evidence
     while (enableRealTimeUpdates && instance == this)
     {
       yield return new WaitForSeconds(updateCheckRate);
@@ -496,224 +600,100 @@ public class EvidenceChecklist : MonoBehaviour
     }
   }
 
-  private void FindSceneGenerator()
-  {
-    if (autoFindSceneGenerator && sceneGenerator == null)
-    {
-      sceneGenerator = FindObjectOfType<CrimeSceneGenerator>();
-      if (sceneGenerator == null)
-      {
-        useManualEvidenceList = true;
-      }
-    }
-  }
-
   private IEnumerator MonitorSceneGeneration()
   {
+    // Monitor scene generation for changes
     int lastObjectCount = 0;
-
     while (updateOnSceneGeneration && sceneGenerator != null && instance == this)
     {
       int currentObjectCount = sceneGenerator.GetSpawnedObjectCount();
-
       if (currentObjectCount != lastObjectCount)
       {
         yield return new WaitForSeconds(0.5f);
         RefreshEvidenceList();
         lastObjectCount = currentObjectCount;
       }
-
       yield return new WaitForSeconds(1f);
     }
   }
 
-  public void OnSceneGenerated()
+  private IEnumerator BoxTriggerMonitoring()
   {
-    RefreshEvidenceList();
-  }
-
-  public void RefreshEvidenceList()
-  {
-    if (instance != this) return;
-
-    InitializeEvidence();
-
-    if (trackFingerprints)
+    // Monitor fingerprint photography changes
+    while (trackFingerprints && instance == this)
     {
-      ScanFingerprintsInBox(); // Re-scan based on new criteria
-      lastKnownPhotographedFingerprints.Clear();
-      photographedFingerprintCount = 0;
-
+      yield return new WaitForSeconds(monitoringRate);
       if (cameraScript != null)
       {
-        // Re-evaluate photographed fingerprints against the new valid set
         HashSet<GameObject> currentPhotographedFingerprints = cameraScript.GetPhotographedFingerprints();
-        foreach (GameObject fp in currentPhotographedFingerprints)
+        foreach (GameObject fingerprint in currentPhotographedFingerprints)
         {
-          // Only re-add if it's still considered "in the box" (i.e., valid and within radius)
-          if (fp != null && fingerprintsInBox.Contains(fp))
+          if (fingerprint != null && fingerprintsInBox.Contains(fingerprint) && !lastKnownPhotographedFingerprints.Contains(fingerprint))
           {
-            HandleNewlyPhotographedFingerprint(fp);
+            HandleNewlyPhotographedFingerprint(fingerprint);
           }
         }
       }
-    }
-
-    if (checklistInstance != null)
-    {
-      Destroy(checklistInstance);
-    }
-    CreateChecklistUI();
-    if (isChecklistVisible)
-    {
-      checklistInstance.SetActive(true);
-      UpdateChecklistTransform();
-      UpdateChecklistUI();
-    }
-    else
-    {
-      checklistInstance.SetActive(false);
+      // Periodic full scan to catch any missed entries or objects that became active
+      if (Time.frameCount % 50 == 0)
+      {
+        ScanFingerprintsInBox();
+      }
     }
   }
 
-  private void FindRequiredComponents()
+  // - EVIDENCE TRACKING
+  public void MarkEvidenceAsPhotographed(string evidenceId)
   {
-    if (cameraScript == null)
+    // Mark regular evidence as photographed
+    if (evidenceId.StartsWith("Fingerprint_"))
     {
-      cameraScript = FindObjectOfType<CameraScript>();
+      return;
     }
-    if (attachPoint == null)
+    if (evidenceNameToIndex.TryGetValue(evidenceId, out int index))
     {
-      GameObject leftController = GameObject.Find("LeftHandAnchor") ?? GameObject.Find("LeftHand");
-      attachPoint = leftController?.transform ?? Camera.main.transform;
+      if (!evidencePhotographed[index])
+      {
+        evidencePhotographed[index] = true;
+        evidenceFound[index] = true;
+        UpdateChecklistUI();
+      }
     }
   }
 
-  private void InitializeEvidence()
+  public void MarkEvidenceAsFound(string evidenceId)
   {
-    evidenceNames.Clear();
-    evidenceFound.Clear();
-    evidencePhotographed.Clear();
-    evidenceNameToIndex.Clear();
-
-    if (trackFingerprints)
+    // Mark evidence as found
+    if (evidenceNameToIndex.TryGetValue(evidenceId, out int index))
     {
-      HashSet<GameObject> allFingerprintsInScene = new HashSet<GameObject>();
-      // Determine the origin for radius check. If sceneGenerator is null, use world origin.
-      Vector3 originPoint = (sceneGenerator != null) ? sceneGenerator.transform.position : Vector3.zero;
-
-      // Use FindObjectsOfType<FingerprintMonitor>() for efficiency if useFingerprintMonitorScript is true
-      // Otherwise, iterate through all GameObjects (less efficient but covers more cases)
-      if (useFingerprintMonitorScript)
+      if (!evidenceFound[index])
       {
-        FingerprintMonitor[] monitors = FindObjectsOfType<FingerprintMonitor>();
-        foreach (FingerprintMonitor monitor in monitors)
-        {
-          GameObject obj = monitor.gameObject;
-          // Apply all checks: IsValidFingerprint (includes MeshRenderer and activeInHierarchy)
-          // AND radius check
-          if (IsValidFingerprint(obj) && Vector3.Distance(obj.transform.position, originPoint) <= fingerprintDetectionRadius)
-          {
-            allFingerprintsInScene.Add(obj);
-          }
-        }
-      }
-      else // Fallback to general GameObject search if not using FingerprintMonitor script
-      {
-        GameObject[] allObjects = FindObjectsOfType<GameObject>();
-        foreach (GameObject obj in allObjects)
-        {
-          // Apply all checks: IsValidFingerprint (includes MeshRenderer and activeInHierarchy)
-          // AND radius check
-          if (IsValidFingerprint(obj) && Vector3.Distance(obj.transform.position, originPoint) <= fingerprintDetectionRadius)
-          {
-            allFingerprintsInScene.Add(obj);
-          }
-        }
-      }
-
-      totalFingerprints = allFingerprintsInScene.Count; // Count all fingerprints regardless of list display
-
-      if (!excludeFingerprintsFromList) // Only add fingerprints to the list if not excluded
-      {
-        foreach (GameObject fp in allFingerprintsInScene)
-        {
-          string uniqueId = GetUniqueFingerprintId(fp);
-          if (!evidenceNameToIndex.ContainsKey(uniqueId))
-          {
-            evidenceNames.Add(uniqueId);
-            evidenceFound.Add(false);
-            evidencePhotographed.Add(false);
-            evidenceNameToIndex[uniqueId] = evidenceNames.Count - 1;
-            fingerprintUniqueIdToDisplayName[uniqueId] = GetFingerprintDisplayName(fp);
-          }
-        }
-      }
-    }
-
-    string[] otherEvidenceNames = GetEvidenceNamesFromBestSource();
-    if (otherEvidenceNames != null)
-    {
-      foreach (string name in otherEvidenceNames)
-      {
-        if (!string.IsNullOrEmpty(name) && !evidenceNameToIndex.ContainsKey(name))
-        {
-          evidenceNames.Add(name);
-          evidenceFound.Add(false);
-          evidencePhotographed.Add(false);
-          evidenceNameToIndex[name] = evidenceNames.Count - 1;
-        }
-      }
-    }
-
-    // Fallback if no evidence found at all (including filtered fingerprints)
-    if (evidenceNames.Count == 0)
-    {
-      foreach (string name in new string[] { "Bottle 1", "Bottle 2", "Bottle 3", "Glass", "Knife" })
-      {
-        evidenceNames.Add(name);
-        evidenceFound.Add(false);
-        evidencePhotographed.Add(false);
-        evidenceNameToIndex[name] = evidenceNames.Count - 1;
+        evidenceFound[index] = true;
+        UpdateChecklistUI();
       }
     }
   }
 
-  private string[] GetEvidenceNamesFromBestSource()
+  private void CheckForNewlyFoundEvidence()
   {
-    if (!useManualEvidenceList && sceneGenerator != null)
-    {
-      try
-      {
-        string[] currentSceneNames = sceneGenerator.GetCurrentSceneEvidenceNames();
-        if (currentSceneNames != null && currentSceneNames.Length > 0)
-        {
-          return currentSceneNames;
-        }
-      }
-      catch (System.Exception)
-      {
-        // Fallback to manual list if sceneGenerator fails or doesn't provide names
-      }
-    }
-    if (useManualEvidenceList)
-    {
-      return evidenceItemNames;
-    }
-    return new string[0];
+    // Placeholder for game-specific logic to check if non-fingerprint evidence is found
   }
 
+  // - UI CREATION SYSTEM
   private void CreateChecklistUI()
   {
+    // Destroy existing UI
     if (checklistInstance != null)
     {
       Destroy(checklistInstance);
     }
-
     fingerprintInfoTextComponent = null;
 
+    // Create main checklist container
     checklistInstance = new GameObject("EvidenceChecklist_" + GetInstanceID());
     checklistInstance.transform.position = initialSpawnPosition;
+
+    // Setup canvas
     Canvas canvas = checklistInstance.AddComponent<Canvas>();
     canvas.renderMode = RenderMode.WorldSpace;
     CanvasScaler canvasScaler = checklistInstance.AddComponent<CanvasScaler>();
@@ -722,6 +702,7 @@ public class EvidenceChecklist : MonoBehaviour
     RectTransform canvasRect = checklistInstance.GetComponent<RectTransform>();
     canvasRect.sizeDelta = new Vector2(500, 750);
 
+    // Create background panel
     GameObject panel = new GameObject("Panel");
     panel.transform.SetParent(checklistInstance.transform, false);
     RectTransform panelRect = panel.AddComponent<RectTransform>();
@@ -731,6 +712,7 @@ public class EvidenceChecklist : MonoBehaviour
     Image panelImage = panel.AddComponent<Image>();
     panelImage.color = new Color(0.1f, 0.1f, 0.1f, 0.95f);
 
+    // Create title
     GameObject titleGO = new GameObject("Title");
     titleGO.transform.SetParent(checklistInstance.transform, false);
     RectTransform titleRect = titleGO.AddComponent<RectTransform>();
@@ -746,6 +728,8 @@ public class EvidenceChecklist : MonoBehaviour
     titleText.fontStyle = FontStyles.Bold;
 
     float fingerprintInfoYOffset = -75;
+
+    // Create fingerprint info display
     if (trackFingerprints)
     {
       GameObject fingerprintInfoGO = new GameObject("FingerprintInfo");
@@ -755,110 +739,174 @@ public class EvidenceChecklist : MonoBehaviour
       fingerprintInfoRect.anchorMax = new Vector2(1, 1);
       fingerprintInfoRect.sizeDelta = new Vector2(0, 50);
       fingerprintInfoRect.anchoredPosition = new Vector2(0, fingerprintInfoYOffset);
-
       fingerprintInfoTextComponent = fingerprintInfoGO.AddComponent<TextMeshProUGUI>();
-      fingerprintInfoTextComponent.name = "FingerprintInfoText";
-      fingerprintInfoTextComponent.text = $"FINGERPRINTS: {photographedFingerprintCount}/{totalFingerprints} (0%)";
       fingerprintInfoTextComponent.color = Color.cyan;
-      fingerprintInfoTextComponent.fontSize = 20;
+      fingerprintInfoTextComponent.fontSize = 24;
       fingerprintInfoTextComponent.alignment = TextAlignmentOptions.Center;
       fingerprintInfoTextComponent.fontStyle = FontStyles.Bold;
+      fingerprintInfoTextComponent.text = "FINGERPRINTS: 0/0 (0%)";
     }
 
-    GameObject contentGO = new GameObject("Content");
-    contentGO.transform.SetParent(checklistInstance.transform, false);
-    RectTransform contentRect = contentGO.AddComponent<RectTransform>();
-    contentRect.anchorMin = new Vector2(0, 0);
-    contentRect.anchorMax = new Vector2(1, 1);
-    float contentStartY = trackFingerprints ? fingerprintInfoYOffset - 50 : -70;
-    contentRect.offsetMin = new Vector2(0, 0);
-    contentRect.offsetMax = new Vector2(0, contentStartY);
-
+    // Create scroll view for checklist items
     GameObject scrollViewGO = new GameObject("ScrollView");
-    scrollViewGO.transform.SetParent(contentGO.transform, false);
-    RectTransform scrollViewRect = scrollViewGO.AddComponent<RectTransform>();
-    scrollViewRect.anchorMin = Vector2.zero;
-    scrollViewRect.anchorMax = Vector2.one;
-    scrollViewRect.sizeDelta = Vector2.zero;
+    scrollViewGO.transform.SetParent(checklistInstance.transform, false);
+    RectTransform scrollRect = scrollViewGO.AddComponent<RectTransform>();
+    scrollRect.anchorMin = new Vector2(0, 0);
+    scrollRect.anchorMax = new Vector2(1, 1);
+    scrollRect.offsetMin = new Vector2(20, 20);
+    scrollRect.offsetMax = new Vector2(-20, fingerprintInfoYOffset - 20);
 
-    ScrollRect scrollRect = scrollViewGO.AddComponent<ScrollRect>();
-    scrollRect.horizontal = false;
-    scrollRect.vertical = true;
-    scrollRect.movementType = ScrollRect.MovementType.Clamped;
+    // Add ScrollRect component
+    ScrollRect scrollRectComp = scrollViewGO.AddComponent<ScrollRect>();
 
-    GameObject viewportGO = new GameObject("Viewport");
-    viewportGO.transform.SetParent(scrollViewGO.transform, false);
-    RectTransform viewportRect = viewportGO.AddComponent<RectTransform>();
-    viewportRect.anchorMin = Vector2.zero;
-    viewportRect.anchorMax = Vector2.one;
-    viewportRect.sizeDelta = Vector2.zero;
-    viewportRect.pivot = new Vector2(0, 1);
-    viewportGO.AddComponent<RectMask2D>();
-    scrollRect.viewport = viewportRect;
+    // Create content panel for items
+    GameObject contentGO = new GameObject("Content");
+    contentGO.transform.SetParent(scrollViewGO.transform, false);
+    RectTransform contentRect = contentGO.AddComponent<RectTransform>();
+    contentRect.anchorMin = new Vector2(0, 1);
+    contentRect.anchorMax = new Vector2(1, 1);
+    contentRect.pivot = new Vector2(0.5f, 1);
+    contentRect.sizeDelta = new Vector2(0, evidenceNames.Count * itemHeight + (evidenceNames.Count - 1) * itemSpacing);
 
-    GameObject itemsPanelGO = new GameObject("ItemsPanel");
-    itemsPanelGO.transform.SetParent(viewportGO.transform, false);
-    RectTransform itemsPanelRect = itemsPanelGO.AddComponent<RectTransform>();
-    itemsPanelRect.anchorMin = new Vector2(0, 1);
-    itemsPanelRect.anchorMax = new Vector2(1, 1);
-    itemsPanelRect.pivot = new Vector2(0.5f, 1);
-    // Set sizeDelta Y to 0, let layout group and content fitter handle it
-    itemsPanelRect.sizeDelta = new Vector2(0, 0);
-    itemsPanelRect.anchoredPosition = new Vector2(0, 0);
-    scrollRect.content = itemsPanelRect;
+    // Add VerticalLayoutGroup for item arrangement
+    VerticalLayoutGroup layoutGroup = contentGO.AddComponent<VerticalLayoutGroup>();
+    layoutGroup.childAlignment = TextAnchor.UpperCenter;
+    layoutGroup.spacing = itemSpacing;
+    layoutGroup.childForceExpandHeight = false;
+    layoutGroup.childControlHeight = false;
 
-    // Add VerticalLayoutGroup to itemsPanelGO
-    VerticalLayoutGroup layoutGroup = itemsPanelGO.AddComponent<VerticalLayoutGroup>();
-    layoutGroup.childAlignment = TextAnchor.UpperLeft;
-    layoutGroup.spacing = itemSpacing; // Use existing itemSpacing for vertical spacing
-    layoutGroup.padding = new RectOffset(20, 20, (int)itemSpacing, (int)itemSpacing); // Add padding around the items
-    layoutGroup.childControlWidth = true; // Children will control their own width
-    layoutGroup.childForceExpandWidth = true; // Children will expand to fill width
-    layoutGroup.childControlHeight = false; // Children will use their specified height
-    layoutGroup.childForceExpandHeight = false; // Do not force expand height
+    // Assign content to scroll view
+    scrollRectComp.content = contentRect;
+    scrollRectComp.vertical = true;
+    scrollRectComp.horizontal = false;
+    scrollRectComp.elasticity = 0.1f;
 
-    // Add ContentSizeFitter to itemsPanelGO to make it resize based on its content
-    ContentSizeFitter contentFitter = itemsPanelGO.AddComponent<ContentSizeFitter>();
-    contentFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-
-
+    // Clear previous UI elements lists
     checklistTexts.Clear();
-    // checklistImages.Clear(); // Not used, but good practice if we were storing these
+    checklistImages.Clear();
+
+    // Create UI elements for each evidence item
+    for (int i = 0; i < evidenceNames.Count; i++)
+    {
+      // Create item container
+      GameObject itemGO = new GameObject("EvidenceItem_" + i);
+      itemGO.transform.SetParent(contentGO.transform, false);
+      RectTransform itemRect = itemGO.AddComponent<RectTransform>();
+      itemRect.sizeDelta = new Vector2(contentRect.rect.width, itemHeight);
+
+      // Add background image to item
+      Image itemImage = itemGO.AddComponent<Image>();
+      itemImage.color = itemBackgroundColor;
+      checklistImages.Add(itemImage);
+
+      // Create TextMeshProUGUI for item name and status
+      GameObject textGO = new GameObject("ItemText");
+      textGO.transform.SetParent(itemGO.transform, false);
+      RectTransform textRect = textGO.AddComponent<RectTransform>();
+      textRect.anchorMin = Vector2.zero;
+      textRect.anchorMax = Vector2.one;
+      textRect.sizeDelta = Vector2.zero;
+      textRect.offsetMin = new Vector2(10, 0);
+      textRect.offsetMax = new Vector2(-10, 0);
+
+      TextMeshProUGUI itemText = textGO.AddComponent<TextMeshProUGUI>();
+      itemText.enableWordWrapping = true;
+      itemText.overflowMode = TextOverflowModes.Truncate;
+      itemText.fontSize = 22;
+      itemText.alignment = TextAlignmentOptions.Left;
+      checklistTexts.Add(itemText);
+    }
+
+    // Hide checklist initially
+    checklistInstance.SetActive(false);
+    isChecklistVisible = false;
+
+    // Update the UI with initial data
+    UpdateChecklistUI();
+  }
+
+  // - UI UPDATE SYSTEM
+  public void UpdateChecklistUI()
+  {
+    // Update the display of all checklist items
+    if (checklistInstance == null) return;
 
     for (int i = 0; i < evidenceNames.Count; i++)
     {
-      GameObject itemGO = new GameObject("EvidenceItem_" + i);
-      itemGO.transform.SetParent(itemsPanelGO.transform, false);
-      RectTransform itemRect = itemGO.AddComponent<RectTransform>();
-      itemRect.anchorMin = new Vector2(0, 0.5f); // Center vertically within the item
-      itemRect.anchorMax = new Vector2(1, 0.5f); // Center vertically within the item
-      itemRect.sizeDelta = new Vector2(0, itemHeight);
-      itemRect.anchoredPosition = Vector2.zero; // Layout group handles positioning
+      string evidenceId = evidenceNames[i];
+      string displayName = evidenceId;
 
-      // Add background box for each item
-      GameObject itemBackgroundGO = new GameObject("ItemBackground");
-      itemBackgroundGO.transform.SetParent(itemGO.transform, false); // Make it a child of the itemGO
-      RectTransform itemBackgroundRect = itemBackgroundGO.AddComponent<RectTransform>();
-      itemBackgroundRect.anchorMin = Vector2.zero;
-      itemBackgroundRect.anchorMax = Vector2.one;
-      itemBackgroundRect.sizeDelta = Vector2.zero; // Make it fill the parent itemGO
-      Image itemBackgroundImage = itemBackgroundGO.AddComponent<Image>();
-      itemBackgroundImage.color = itemBackgroundColor; // Use the new serialized color
+      // Handle fingerprint display names
+      if (evidenceId.StartsWith("Fingerprint_") && fingerprintUniqueIdToDisplayName.ContainsKey(evidenceId))
+      {
+        displayName = fingerprintUniqueIdToDisplayName[evidenceId];
+      }
+      else if (evidenceId.StartsWith("Fingerprint_"))
+      {
+        displayName = "Fingerprint";
+      }
 
-      TextMeshProUGUI itemText = itemGO.AddComponent<TextMeshProUGUI>();
-      itemText.name = "ItemText_" + i;
-      itemText.color = Color.white;
-      itemText.fontSize = 24;
-      itemText.alignment = TextAlignmentOptions.Left;
-      itemText.rectTransform.offsetMin = new Vector2(20, 0);
-      itemText.rectTransform.offsetMax = new Vector2(-20, 0);
-      checklistTexts.Add(itemText);
+      bool found = evidenceFound[i];
+      bool photographed = evidencePhotographed[i];
+
+      // Determine text color and content
+      Color textColor;
+      string statusSymbol;
+      string itemTextContent;
+
+      if (enableMysteryMode && !found)
+      {
+        textColor = mysteryColor;
+        statusSymbol = mysteryCheckSymbol;
+        itemTextContent = bulletPointSymbol + mysterySymbol;
+      }
+      else
+      {
+        textColor = found ? foundColor : notFoundColor;
+        statusSymbol = found ? checkmarkSymbol : uncheckSymbol;
+        itemTextContent = bulletPointSymbol + displayName;
+      }
+
+      // Add photographed symbol if applicable
+      if (photographed)
+      {
+        itemTextContent += " " + photographSymbol;
+        textColor = photographedColor;
+      }
+
+      // Update text and color
+      if (i < checklistTexts.Count)
+      {
+        checklistTexts[i].text = $"{statusSymbol} {itemTextContent}";
+        checklistTexts[i].color = textColor;
+      }
     }
-    checklistInstance.SetActive(false);
+
+    // Update fingerprint info text
+    if (trackFingerprints && fingerprintInfoTextComponent != null)
+    {
+      string percentage = (totalFingerprints > 0) ? $"({(float)photographedFingerprintCount / totalFingerprints:P0})" : "(0%)";
+      fingerprintInfoTextComponent.text = $"FINGERPRINTS: {photographedFingerprintCount}/{totalFingerprints} {percentage}";
+    }
   }
 
+  private void UpdateChecklistTransform()
+  {
+    // Update checklist UI transform to follow attach point
+    if (attachPoint == null || checklistInstance == null) return;
+
+    Vector3 targetPosition = attachPoint.position + attachPoint.TransformDirection(positionOffset);
+    Quaternion targetRotation = attachPoint.rotation * Quaternion.Euler(rotationOffset);
+
+    checklistInstance.transform.position = targetPosition;
+    checklistInstance.transform.rotation = targetRotation;
+    checklistInstance.transform.localScale = Vector3.one * checklistScale;
+  }
+
+  // - CHECKLIST VISIBILITY TOGGLE
   public void ToggleChecklist()
   {
+    // Toggle checklist visibility
     isChecklistVisible = !isChecklistVisible;
     if (checklistInstance != null)
     {
@@ -867,180 +915,65 @@ public class EvidenceChecklist : MonoBehaviour
       {
         UpdateChecklistTransform();
         UpdateChecklistUI();
-        // NEW: Play sound when checklist opens
-        if (audioSource != null && openChecklistSound != null) //
+        if (audioSource != null && openChecklistSound != null)
         {
-          audioSource.PlayOneShot(openChecklistSound); //
+          audioSource.PlayOneShot(openChecklistSound);
         }
       }
     }
   }
 
-  public void ShowChecklist()
+  // - PUBLIC REFRESH METHODS
+  public void RefreshEvidenceList()
   {
-    isChecklistVisible = true;
-    if (checklistInstance != null)
+    // Call InitializeEvidence to re-populate all lists and re-scan fingerprints
+    InitializeEvidence();
+
+    // Recreate UI to reflect potentially changed number of items
+    CreateChecklistUI();
+
+    // Ensure UI is updated
+    if (isChecklistVisible)
     {
       checklistInstance.SetActive(true);
       UpdateChecklistTransform();
       UpdateChecklistUI();
     }
-  }
-
-  public void HideChecklist()
-  {
-    isChecklistVisible = false;
-    if (checklistInstance != null)
+    else
     {
       checklistInstance.SetActive(false);
     }
   }
 
-  private void UpdateChecklistTransform()
+  public void OnSceneGenerated()
   {
-    if (attachPoint != null)
+    // Handle scene generation event
+    // Clear all previous fingerprint data
+    lastKnownPhotographedFingerprints.Clear();
+    photographedFingerprintCount = 0;
+
+    // Reset CameraScript photographed fingerprints
+    if (cameraScript != null)
     {
-      checklistInstance.transform.position = attachPoint.position + attachPoint.TransformDirection(positionOffset);
-      checklistInstance.transform.rotation = attachPoint.rotation * Quaternion.Euler(rotationOffset);
-      checklistInstance.transform.localScale = Vector3.one * checklistScale;
+      cameraScript.ResetPhotographedFingerprints();
     }
+
+    // Perform a full re-initialization which includes re-scanning fingerprints
+    InitializeEvidence();
+    CreateChecklistUI();
+
+    // Update UI state
+    if (isChecklistVisible)
+    {
+      UpdateChecklistTransform();
+    }
+    UpdateChecklistUI();
   }
 
-  private void UpdateChecklistUI()
-  {
-    if (checklistInstance == null) return;
-
-    // Re-find fingerprintInfoTextComponent if it's null (can happen after Destroy/Create cycle)
-    if (fingerprintInfoTextComponent == null)
-    {
-      GameObject fingerprintInfoGO = checklistInstance.transform.Find("FingerprintInfo")?.gameObject;
-      if (fingerprintInfoGO != null)
-      {
-        fingerprintInfoTextComponent = fingerprintInfoGO.GetComponent<TextMeshProUGUI>();
-      }
-
-      if (fingerprintInfoTextComponent == null)
-      {
-        // Fallback: search all TextMeshProUGUI components if direct find fails
-        TextMeshProUGUI[] allTexts = checklistInstance.GetComponentsInChildren<TextMeshProUGUI>();
-        foreach (TextMeshProUGUI text in allTexts)
-        {
-          if (text.name == "FingerprintInfoText" || text.gameObject.name == "FingerprintInfo")
-          {
-            fingerprintInfoTextComponent = text;
-            break;
-          }
-        }
-      }
-    }
-
-    if (fingerprintInfoTextComponent != null)
-    {
-      string percentage = (totalFingerprints > 0)
-          ? $"({(float)photographedFingerprintCount / totalFingerprints:P0})"
-          : "(0%)";
-
-      fingerprintInfoTextComponent.text = $"FINGERPRINTS: {photographedFingerprintCount}/{totalFingerprints} {percentage}";
-    }
-
-    for (int i = 0; i < evidenceNames.Count; i++)
-    {
-      if (i < checklistTexts.Count)
-      {
-        TextMeshProUGUI itemText = checklistTexts[i];
-        string currentEvidenceName = evidenceNames[i];
-        bool isPhotographed = evidencePhotographed[i];
-        bool isFound = evidenceFound[i];
-
-        string displayName = currentEvidenceName;
-        bool isFingerprint = currentEvidenceName.StartsWith("Fingerprint_");
-
-        if (isFingerprint && fingerprintUniqueIdToDisplayName.ContainsKey(currentEvidenceName))
-        {
-          displayName = fingerprintUniqueIdToDisplayName[currentEvidenceName];
-        }
-
-        string statusSymbol = uncheckSymbol;
-        Color textColor = notFoundColor;
-
-        if (isFingerprint)
-        {
-          if (enableMysteryMode)
-          {
-            displayName = mysterySymbol;
-            statusSymbol = mysteryCheckSymbol;
-            textColor = mysteryColor;
-          }
-
-          if (isPhotographed)
-          {
-            statusSymbol = photographSymbol;
-            textColor = photographedColor;
-            if (!enableMysteryMode)
-            {
-              statusSymbol = checkmarkSymbol;
-            }
-          }
-        }
-        else // Not a fingerprint
-        {
-          if (enableMysteryMode)
-          {
-            displayName = mysterySymbol;
-            statusSymbol = mysteryCheckSymbol;
-            textColor = mysteryColor;
-          }
-
-          if (isFound)
-          {
-            statusSymbol = checkmarkSymbol;
-            textColor = foundColor;
-          }
-          else if (isPhotographed)
-          {
-            statusSymbol = photographSymbol;
-            textColor = photographedColor;
-          }
-        }
-
-        // Construct the text based on mystery mode, now including the bullet point
-        if (enableMysteryMode)
-        {
-          itemText.text = $"{bulletPointSymbol}{statusSymbol} {displayName}";
-        }
-        else
-        {
-          itemText.text = $"{bulletPointSymbol}{statusSymbol} {displayName}";
-          // Only add photograph symbol for non-fingerprints if not in mystery mode and photographed
-          if (isPhotographed && !isFingerprint)
-          {
-            itemText.text += $" {photographSymbol}";
-          }
-        }
-        itemText.color = textColor;
-      }
-    }
-  }
-
-  public void MarkEvidenceAsFound(string evidenceId)
-  {
-    if (evidenceNameToIndex.TryGetValue(evidenceId, out int index))
-    {
-      if (!evidenceFound[index])
-      {
-        evidenceFound[index] = true;
-        UpdateChecklistUI();
-      }
-    }
-  }
-
-  public void MarkFingerprintAsPhotographedPublic(GameObject fingerprint)
-  {
-    HandleNewlyPhotographedFingerprint(fingerprint);
-  }
-
+  // - VR INPUT HANDLING
   private bool CheckVRRightControllerAButton()
   {
+    // Check VR controller A button
     if (rightControllers.Count == 0)
     {
       InputDevices.GetDevicesWithCharacteristics(
@@ -1050,23 +983,14 @@ public class EvidenceChecklist : MonoBehaviour
 
     if (rightControllers.Count > 0)
     {
-      rightControllers[0].TryGetFeatureValue(CommonUsages.primaryButton, out bool aButtonState);
-      return aButtonState;
-    }
-    return false;
-  }
-
-  private void CheckForNewlyFoundEvidence()
-  {
-    if (toolSpawner == null || !enableRealTimeUpdates) return;
-
-    for (int i = 0; i < evidenceNames.Count; i++)
-    {
-      string evidenceId = evidenceNames[i];
-      if (!evidenceId.StartsWith("Fingerprint_") && !evidenceFound[i])
+      foreach (var device in rightControllers)
       {
-        // Game-specific logic for detecting found evidence would go here
+        if (device.TryGetFeatureValue(CommonUsages.primaryButton, out bool aButtonValue) && aButtonValue)
+        {
+          return true;
+        }
       }
     }
+    return false;
   }
 }

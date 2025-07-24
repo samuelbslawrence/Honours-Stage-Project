@@ -5,46 +5,74 @@ using UnityEngine.XR;
 
 public class TeleportSystem : MonoBehaviour
 {
+  // - SERIALIZED FIELD DECLARATIONS
   [Header("Teleport Settings")]
-  [SerializeField] private Transform tpPointsParent; // Parent containing all TP Points
-  [SerializeField] private float raycastDistance = 20f; // How far to raycast for TP Points
-  [SerializeField] private float raycastRadius = 0.1f; // Radius for spherecast
-  [SerializeField] private LayerMask tpLayerMask = -1; // Layer mask for TP Points
-  [SerializeField] private string alphaThresholdProperty = "_Cutoff"; // Shader property name
-  [SerializeField] private bool teleportHeldObjects = true; // Whether to teleport objects player is holding
-  [SerializeField] private string[] grabLayerNames = new string[] { "Grab", "Grabbable", "Held" }; // Layer names for grabbable objects
+  [SerializeField] private Transform tpPointsParent;
+  [SerializeField] private float raycastDistance = 20f;
+  [SerializeField] private float raycastRadius = 0.1f;
+  [SerializeField] private LayerMask tpLayerMask = -1;
+  [SerializeField] private string alphaThresholdProperty = "_Cutoff";
+  [SerializeField] private bool teleportHeldObjects = true;
+  [SerializeField] private string[] grabLayerNames = new string[] { "Grab", "Grabbable", "Held" };
 
   [Header("Visual Settings")]
-  [SerializeField] private float revealDelay = 0.05f; // Delay between revealing each point
-  [SerializeField] private float revealDuration = 0.3f; // How long it takes to reveal a point
-  [SerializeField] private float hideDuration = 0.2f; // How long it takes to hide a point
+  [SerializeField] private float revealDelay = 0.05f;
+  [SerializeField] private float revealDuration = 0.3f;
+  [SerializeField] private float hideDuration = 0.2f;
 
   [Header("Beam Settings")]
-  [SerializeField] private bool showBeam = true; // Whether to show the teleport beam
-  [SerializeField] private GameObject beamPrefab; // Optional custom beam prefab
-  [SerializeField] private float beamWidth = 0.02f; // Width of the teleport beam
-  [SerializeField] private float beamEndWidth = 0.005f; // Width at the end of the beam (tapered)
-  [SerializeField] private Color beamStartColor = new Color(0.2f, 0.6f, 1f, 0.8f); // Color at start of beam
-  [SerializeField] private Color beamEndColor = new Color(0.2f, 0.6f, 1f, 0.0f); // Color at end of beam (transparent)
-  [SerializeField] private Material beamMaterial; // Material for the beam line renderer
-  [SerializeField] private int beamSegments = 10; // Number of segments in the beam (for curved beam)
+  [SerializeField] private bool showBeam = true;
+  [SerializeField] private GameObject beamPrefab;
+  [SerializeField] private float beamWidth = 0.02f;
+  [SerializeField] private float beamEndWidth = 0.005f;
+  [SerializeField] private Color beamStartColor = new Color(0.2f, 0.6f, 1f, 0.8f);
+  [SerializeField] private Color beamEndColor = new Color(0.2f, 0.6f, 1f, 0.0f);
+  [SerializeField] private Material beamMaterial;
+  [SerializeField] private int beamSegments = 10;
 
-  // State tracking
+  // - PRIVATE STATE VARIABLES
+  // Teleporter state tracking
   private bool isTeleporterActive = false;
   private bool wasButtonPressed = false;
+
+  // TP Point management
   private List<TPPoint> tpPoints = new List<TPPoint>();
   private TPPoint currentTargetPoint = null;
   private Coroutine revealCoroutine = null;
-  private Camera mainCamera;
 
-  // Beam rendering - NEW APPROACH
+  // Component references
+  private Camera mainCamera;
   private Transform rightControllerTransform;
+
+  // Beam rendering system
   private GameObject[] beamSegmentObjects;
   private Material beamMaterialInstance;
 
+  // - INITIALIZATION
   void Start()
   {
-    // Find main camera
+    // Setup camera reference
+    SetupMainCamera();
+
+    // Setup TP points parent
+    SetupTPPointsParent();
+
+    // Initialize teleport points
+    InitializeTPPoints();
+
+    // Configure layer mask
+    ConfigureLayerMask();
+
+    // Setup beam rendering
+    SetupBeamRendering();
+
+    // Hide beam initially
+    SetBeamActive(false);
+  }
+
+  // Find and validate main camera
+  void SetupMainCamera()
+  {
     mainCamera = Camera.main;
     if (mainCamera == null)
     {
@@ -56,27 +84,33 @@ public class TeleportSystem : MonoBehaviour
         return;
       }
     }
+  }
 
-    // Try to find TP Points parent if not assigned
+  // Find TP points parent object
+  void SetupTPPointsParent()
+  {
     if (tpPointsParent == null)
     {
       GameObject tpParent = GameObject.Find("TP Points");
       if (tpParent != null)
       {
         tpPointsParent = tpParent.transform;
-        Debug.Log("Found TP Points parent: " + tpParent.name);
       }
     }
+  }
 
-    // Initialize TP Points
-    InitializeTPPoints();
-
-    // Set default layer mask if not specified
+  // Configure raycast layer mask
+  void ConfigureLayerMask()
+  {
     if (tpLayerMask.value == -1)
     {
       tpLayerMask = Physics.DefaultRaycastLayers;
     }
+  }
 
+  // Setup beam rendering components
+  void SetupBeamRendering()
+  {
     // Create beam material instance
     if (beamMaterial == null)
     {
@@ -84,90 +118,175 @@ public class TeleportSystem : MonoBehaviour
       beamMaterial.color = beamStartColor;
     }
 
-    // Create a unique instance of the material so we don't modify the original
     beamMaterialInstance = new Material(beamMaterial);
 
     // Setup beam segments
     SetupBeamSegments();
-
-    // Hide beam initially
-    SetBeamActive(false);
   }
 
+  // - UPDATE LOOP
+  void Update()
+  {
+    // Handle teleport button input
+    bool isButtonPressed = CheckTeleportButtonPressed();
+
+    // Process button state changes
+    if (isButtonPressed && !wasButtonPressed)
+    {
+      ActivateTeleporter();
+    }
+    else if (!isButtonPressed && wasButtonPressed)
+    {
+      TriggerTeleport();
+    }
+
+    // Update teleporter targeting if active
+    if (isTeleporterActive)
+    {
+      UpdateTeleporterTarget();
+    }
+
+    wasButtonPressed = isButtonPressed;
+  }
+
+  // - TP POINT INITIALIZATION
+  // Initialize all teleport points in scene
+  void InitializeTPPoints()
+  {
+    tpPoints.Clear();
+
+    // Get TP points from parent if available
+    if (tpPointsParent != null)
+    {
+      GetTPPointsFromParent();
+    }
+    else
+    {
+      // Find TP points in scene
+      FindTPPointsInScene();
+    }
+
+    // Initialize all found TP points
+    foreach (TPPoint point in tpPoints)
+    {
+      point.Initialize(alphaThresholdProperty);
+    }
+  }
+
+  // Get TP points from designated parent object
+  void GetTPPointsFromParent()
+  {
+    for (int i = 0; i < tpPointsParent.childCount; i++)
+    {
+      Transform child = tpPointsParent.GetChild(i);
+      TPPoint tpPoint = child.GetComponent<TPPoint>();
+
+      // Add TPPoint component if missing
+      if (tpPoint == null)
+      {
+        tpPoint = child.gameObject.AddComponent<TPPoint>();
+      }
+
+      tpPoints.Add(tpPoint);
+    }
+  }
+
+  // Find TP points throughout the scene
+  void FindTPPointsInScene()
+  {
+    // Try finding existing TPPoint components
+    TPPoint[] allTPPoints = GameObject.FindObjectsOfType<TPPoint>();
+    if (allTPPoints.Length > 0)
+    {
+      tpPoints.AddRange(allTPPoints);
+    }
+    else
+    {
+      // Search for objects with TP Point in name
+      GameObject[] tpObjects = GameObject.FindObjectsOfType<GameObject>();
+      foreach (GameObject obj in tpObjects)
+      {
+        if (obj.name.Contains("TP Point"))
+        {
+          TPPoint tpPoint = obj.GetComponent<TPPoint>();
+          if (tpPoint == null)
+          {
+            tpPoint = obj.AddComponent<TPPoint>();
+          }
+          tpPoints.Add(tpPoint);
+        }
+      }
+    }
+  }
+
+  // - BEAM RENDERING SYSTEM
+  // Setup beam segment objects for rendering
   void SetupBeamSegments()
   {
-    // Create beam segment objects
     beamSegmentObjects = new GameObject[beamSegments - 1];
 
     for (int i = 0; i < beamSegments - 1; i++)
     {
       if (beamPrefab != null)
       {
-        // Use the prefab if provided
         beamSegmentObjects[i] = Instantiate(beamPrefab);
       }
       else
       {
-        // Create a simple quad for each segment
         beamSegmentObjects[i] = CreateBeamSegment();
       }
 
-      // Don't show initially
       beamSegmentObjects[i].SetActive(false);
     }
-
-    Debug.Log("Created " + (beamSegments - 1) + " beam segments");
   }
 
+  // Create individual beam segment mesh
   GameObject CreateBeamSegment()
   {
     GameObject segmentObj = new GameObject("BeamSegment");
 
-    // Add a quad mesh
+    // Add mesh components
     MeshFilter meshFilter = segmentObj.AddComponent<MeshFilter>();
     MeshRenderer meshRenderer = segmentObj.AddComponent<MeshRenderer>();
 
-    // Create a simple quad mesh
+    // Create quad mesh
     Mesh mesh = new Mesh();
 
-    // Vertices (simple quad)
+    // Define quad vertices
     Vector3[] vertices = new Vector3[4]
     {
-            new Vector3(-0.5f, -0.5f, 0),
-            new Vector3(0.5f, -0.5f, 0),
-            new Vector3(-0.5f, 0.5f, 0),
-            new Vector3(0.5f, 0.5f, 0)
+      new Vector3(-0.5f, -0.5f, 0),
+      new Vector3(0.5f, -0.5f, 0),
+      new Vector3(-0.5f, 0.5f, 0),
+      new Vector3(0.5f, 0.5f, 0)
     };
 
-    // Triangles
-    int[] triangles = new int[6]
-    {
-            0, 2, 1,
-            2, 3, 1
-    };
+    // Define triangles
+    int[] triangles = new int[6] { 0, 2, 1, 2, 3, 1 };
 
-    // UVs
+    // Define UVs
     Vector2[] uvs = new Vector2[4]
     {
-            new Vector2(0, 0),
-            new Vector2(1, 0),
-            new Vector2(0, 1),
-            new Vector2(1, 1)
+      new Vector2(0, 0),
+      new Vector2(1, 0),
+      new Vector2(0, 1),
+      new Vector2(1, 1)
     };
 
-    // Assign to mesh
+    // Assign mesh data
     mesh.vertices = vertices;
     mesh.triangles = triangles;
     mesh.uv = uvs;
     mesh.RecalculateNormals();
 
-    // Assign mesh and material
+    // Configure mesh and material
     meshFilter.mesh = mesh;
     meshRenderer.material = beamMaterialInstance;
 
     return segmentObj;
   }
 
+  // Control beam visibility
   void SetBeamActive(bool active)
   {
     if (beamSegmentObjects != null)
@@ -182,117 +301,70 @@ public class TeleportSystem : MonoBehaviour
     }
   }
 
-  void Update()
+  // Update beam visual appearance
+  private void UpdateBeamVisual(Vector3 origin, Vector3 direction, Quaternion rotation)
   {
-    // Check for B button press on controller
-    bool isButtonPressed = CheckTeleportButtonPressed();
+    if (beamSegmentObjects == null || beamSegmentObjects.Length == 0)
+      return;
 
-    // Button just pressed
-    if (isButtonPressed && !wasButtonPressed)
-    {
-      ActivateTeleporter();
-    }
-    // Button just released
-    else if (!isButtonPressed && wasButtonPressed)
-    {
-      TriggerTeleport();
-    }
+    float beamLength = raycastDistance;
 
-    // Update teleporter ray if active
-    if (isTeleporterActive)
+    // Position and orient each beam segment
+    for (int i = 0; i < beamSegmentObjects.Length; i++)
     {
-      UpdateTeleporterTarget();
-    }
+      GameObject segment = beamSegmentObjects[i];
+      if (segment == null) continue;
 
-    // Update button state
-    wasButtonPressed = isButtonPressed;
+      // Calculate segment position
+      float segStart = (float)i / beamSegmentObjects.Length;
+      float segEnd = (float)(i + 1) / beamSegmentObjects.Length;
+      float segCenter = (segStart + segEnd) / 2;
+
+      // Position segment
+      Vector3 segmentPosition = origin + direction * (beamLength * segCenter);
+      segment.transform.position = segmentPosition;
+
+      // Orient segment
+      segment.transform.rotation = Quaternion.LookRotation(direction) * Quaternion.Euler(90, 0, 0);
+
+      // Scale segment
+      float segmentLength = beamLength / beamSegmentObjects.Length;
+      float segmentWidth = Mathf.Lerp(beamWidth, beamEndWidth, segCenter);
+      segment.transform.localScale = new Vector3(segmentWidth, segmentLength, 1);
+
+      // Update segment color
+      if (segment.GetComponent<Renderer>() != null)
+      {
+        Renderer renderer = segment.GetComponent<Renderer>();
+        Color segColor = Color.Lerp(beamStartColor, beamEndColor, segCenter);
+        renderer.material.color = segColor;
+      }
+    }
   }
 
-  void InitializeTPPoints()
-  {
-    tpPoints.Clear();
-
-    // If we have a parent, get all TP Points from it
-    if (tpPointsParent != null)
-    {
-      for (int i = 0; i < tpPointsParent.childCount; i++)
-      {
-        Transform child = tpPointsParent.GetChild(i);
-        TPPoint tpPoint = child.GetComponent<TPPoint>();
-
-        // If the point doesn't have a TPPoint component, add one
-        if (tpPoint == null)
-        {
-          tpPoint = child.gameObject.AddComponent<TPPoint>();
-        }
-
-        tpPoints.Add(tpPoint);
-        Debug.Log("Added TP Point: " + child.name);
-      }
-    }
-    else
-    {
-      // If no parent, try to find all TP Points by name in the scene
-      TPPoint[] allTPPoints = GameObject.FindObjectsOfType<TPPoint>();
-      if (allTPPoints.Length > 0)
-      {
-        tpPoints.AddRange(allTPPoints);
-        Debug.Log("Found " + allTPPoints.Length + " TP Points in scene");
-      }
-      else
-      {
-        // Try to find objects containing "TP Point" in their name
-        GameObject[] tpObjects = GameObject.FindObjectsOfType<GameObject>();
-        foreach (GameObject obj in tpObjects)
-        {
-          if (obj.name.Contains("TP Point"))
-          {
-            TPPoint tpPoint = obj.GetComponent<TPPoint>();
-            if (tpPoint == null)
-            {
-              tpPoint = obj.AddComponent<TPPoint>();
-            }
-            tpPoints.Add(tpPoint);
-            Debug.Log("Added TP Point by name: " + obj.name);
-          }
-        }
-      }
-    }
-
-    // Initialize all TP Points
-    foreach (TPPoint point in tpPoints)
-    {
-      point.Initialize(alphaThresholdProperty);
-    }
-
-    Debug.Log("Initialized " + tpPoints.Count + " TP Points");
-  }
-
+  // - INPUT HANDLING
+  // Check for teleport button press
   bool CheckTeleportButtonPressed()
   {
-    // Check for VR controller B button specifically
+    // Check VR controller B button
     if (XRSettings.isDeviceActive)
     {
       try
       {
         var inputDevices = new List<InputDevice>();
-
-        // Try to get the right controller first
         InputDevices.GetDevicesWithCharacteristics(InputDeviceCharacteristics.Right | InputDeviceCharacteristics.Controller, inputDevices);
 
         foreach (var device in inputDevices)
         {
-          // Check specifically for secondary button (B on Oculus)
+          // Check secondary button (B on Oculus)
           if (device.TryGetFeatureValue(CommonUsages.secondaryButton, out bool secondaryButtonValue) && secondaryButtonValue)
           {
             return true;
           }
 
-          // Some controllers may use primary button for B
+          // Check primary button for non-Oculus controllers
           if (device.TryGetFeatureValue(CommonUsages.primaryButton, out bool primaryButtonValue) && primaryButtonValue)
           {
-            // For Oculus, only the right controller's primary button should be A, not B
-            // But for other controllers, this might be B
             string deviceName = device.name.ToLower();
             if (!deviceName.Contains("oculus") || !deviceName.Contains("right"))
             {
@@ -303,11 +375,11 @@ public class TeleportSystem : MonoBehaviour
       }
       catch (System.Exception)
       {
-        // Ignore errors
+        // Ignore input errors
       }
     }
 
-    // Keyboard fallback for testing - only B key
+    // Keyboard fallback for testing
     if (Input.GetKey(KeyCode.B))
     {
       return true;
@@ -316,12 +388,13 @@ public class TeleportSystem : MonoBehaviour
     return false;
   }
 
+  // - TELEPORTER ACTIVATION SYSTEM
+  // Activate teleporter and show TP points
   void ActivateTeleporter()
   {
     if (isTeleporterActive)
       return;
 
-    Debug.Log("Activating teleporter");
     isTeleporterActive = true;
 
     // Show beam
@@ -330,33 +403,30 @@ public class TeleportSystem : MonoBehaviour
       SetBeamActive(true);
     }
 
-    // Stop any ongoing animations
+    // Stop ongoing animations
     if (revealCoroutine != null)
     {
       StopCoroutine(revealCoroutine);
     }
 
-    // Sort TP Points by distance to player
+    // Sort and reveal TP points
     SortTPPointsByDistance();
-
-    // Start revealing TP Points sequentially
     revealCoroutine = StartCoroutine(RevealTPPointsSequentially());
   }
 
+  // Sort TP points by distance to player
   void SortTPPointsByDistance()
   {
-    // Get player position (using this transform as the player reference)
     Vector3 playerPosition = transform.position;
 
-    // Sort TP Points by distance to player (closest first)
     tpPoints.Sort((a, b) =>
         Vector3.Distance(a.transform.position, playerPosition)
         .CompareTo(Vector3.Distance(b.transform.position, playerPosition)));
   }
 
+  // Reveal TP points one by one
   IEnumerator RevealTPPointsSequentially()
   {
-    // Reveal each point one by one, closest first
     foreach (TPPoint point in tpPoints)
     {
       point.RevealPoint(revealDuration);
@@ -364,95 +434,18 @@ public class TeleportSystem : MonoBehaviour
     }
   }
 
+  // - TARGETING SYSTEM
+  // Update teleporter target selection
   void UpdateTeleporterTarget()
   {
-    // Cast a ray from the camera/controller to find a TP Point
+    // Setup raycast from controller or camera
     Ray ray;
     Vector3 rayOrigin = mainCamera.transform.position;
     Vector3 rayDirection = mainCamera.transform.forward;
     Quaternion rayRotation = Quaternion.identity;
 
-    // Try to use the right controller if available
-    bool usingController = false;
-
-    // First, try to find RightHandAnchor specifically
-    GameObject rightHandAnchor = GameObject.Find("RightHandAnchor");
-    if (rightHandAnchor != null)
-    {
-      rayOrigin = rightHandAnchor.transform.position;
-      rayDirection = rightHandAnchor.transform.forward;
-      rayRotation = rightHandAnchor.transform.rotation;
-      rightControllerTransform = rightHandAnchor.transform;
-      usingController = true;
-
-      Debug.Log("Using RightHandAnchor for teleport beam");
-    }
-    // Fall back to XR Input system if RightHandAnchor not found
-    else if (XRSettings.isDeviceActive)
-    {
-      try
-      {
-        var inputDevices = new List<InputDevice>();
-        InputDevices.GetDevicesWithCharacteristics(InputDeviceCharacteristics.Right | InputDeviceCharacteristics.Controller, inputDevices);
-
-        if (inputDevices.Count > 0)
-        {
-          // Use right controller for pointing
-          InputDevice rightController = inputDevices[0];
-
-          if (rightController.TryGetFeatureValue(CommonUsages.devicePosition, out Vector3 position) &&
-              rightController.TryGetFeatureValue(CommonUsages.deviceRotation, out Quaternion rotation))
-          {
-            rayOrigin = position;
-            rayDirection = rotation * Vector3.forward;
-            rayRotation = rotation;
-            usingController = true;
-
-            // Store controller transform for beam attachment
-            if (rightControllerTransform == null)
-            {
-              // Try to find the controller object with specific names
-              string[] possibleControllerNames = new string[] {
-                                "RightHandAnchor", "RightHand", "RightController", "Right Hand Controller",
-                                "OVRControllerRight", "XRRightController", "Right Controller"
-                            };
-
-              foreach (string controllerName in possibleControllerNames)
-              {
-                GameObject controllerObj = GameObject.Find(controllerName);
-                if (controllerObj != null)
-                {
-                  rightControllerTransform = controllerObj.transform;
-                  Debug.Log("Found right controller transform: " + controllerObj.name);
-                  break;
-                }
-              }
-
-              // If still not found, try to search by component names
-              if (rightControllerTransform == null)
-              {
-                GameObject[] allObjects = GameObject.FindObjectsOfType<GameObject>();
-                foreach (GameObject obj in allObjects)
-                {
-                  // Look for common controller names
-                  if (obj.name.Contains("Right") &&
-                  (obj.name.Contains("Controller") || obj.name.Contains("Hand")))
-                  {
-                    rightControllerTransform = obj.transform;
-                    Debug.Log("Found right controller transform: " + obj.name);
-                    break;
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-      catch (System.Exception)
-      {
-        // Ignore errors
-      }
-    }
+    // Try to use right controller if available
+    bool usingController = GetControllerRayInfo(ref rayOrigin, ref rayDirection, ref rayRotation);
 
     ray = new Ray(rayOrigin, rayDirection);
 
@@ -462,43 +455,116 @@ public class TeleportSystem : MonoBehaviour
       UpdateBeamVisual(rayOrigin, rayDirection, rayRotation);
     }
 
-    // Debug ray
-    Debug.DrawRay(ray.origin, ray.direction * raycastDistance, Color.yellow);
+    // Perform targeting raycast
+    ProcessTargetingRaycast(ray);
+  }
 
+  // Get ray information from VR controller
+  bool GetControllerRayInfo(ref Vector3 rayOrigin, ref Vector3 rayDirection, ref Quaternion rayRotation)
+  {
+    // Try to find RightHandAnchor first
+    GameObject rightHandAnchor = GameObject.Find("RightHandAnchor");
+    if (rightHandAnchor != null)
+    {
+      rayOrigin = rightHandAnchor.transform.position;
+      rayDirection = rightHandAnchor.transform.forward;
+      rayRotation = rightHandAnchor.transform.rotation;
+      rightControllerTransform = rightHandAnchor.transform;
+      return true;
+    }
+
+    // Fallback to XR Input system
+    if (XRSettings.isDeviceActive)
+    {
+      try
+      {
+        var inputDevices = new List<InputDevice>();
+        InputDevices.GetDevicesWithCharacteristics(InputDeviceCharacteristics.Right | InputDeviceCharacteristics.Controller, inputDevices);
+
+        if (inputDevices.Count > 0)
+        {
+          InputDevice rightController = inputDevices[0];
+
+          if (rightController.TryGetFeatureValue(CommonUsages.devicePosition, out Vector3 position) &&
+              rightController.TryGetFeatureValue(CommonUsages.deviceRotation, out Quaternion rotation))
+          {
+            rayOrigin = position;
+            rayDirection = rotation * Vector3.forward;
+            rayRotation = rotation;
+
+            // Store controller transform reference
+            FindControllerTransform();
+            return true;
+          }
+        }
+      }
+      catch (System.Exception)
+      {
+        // Ignore controller errors
+      }
+    }
+
+    return false;
+  }
+
+  // Find controller transform for beam attachment
+  void FindControllerTransform()
+  {
+    if (rightControllerTransform != null) return;
+
+    string[] possibleControllerNames = new string[] {
+      "RightHandAnchor", "RightHand", "RightController", "Right Hand Controller",
+      "OVRControllerRight", "XRRightController", "Right Controller"
+    };
+
+    // Search by name
+    foreach (string controllerName in possibleControllerNames)
+    {
+      GameObject controllerObj = GameObject.Find(controllerName);
+      if (controllerObj != null)
+      {
+        rightControllerTransform = controllerObj.transform;
+        return;
+      }
+    }
+
+    // Search by name pattern
+    GameObject[] allObjects = GameObject.FindObjectsOfType<GameObject>();
+    foreach (GameObject obj in allObjects)
+    {
+      if (obj.name.Contains("Right") &&
+          (obj.name.Contains("Controller") || obj.name.Contains("Hand")))
+      {
+        rightControllerTransform = obj.transform;
+        return;
+      }
+    }
+  }
+
+  // Process targeting raycast results
+  void ProcessTargetingRaycast(Ray ray)
+  {
     RaycastHit hit;
     TPPoint hitPoint = null;
-    float hitDistance = raycastDistance;
 
-    // Use spherecast to make it easier to hit TP Points
+    // Perform spherecast for easier targeting
     if (Physics.SphereCast(ray, raycastRadius, out hit, raycastDistance, tpLayerMask))
     {
-      // Store hit distance for beam visualization
-      hitDistance = hit.distance;
-
-      // Check if we hit a TP Point
+      // Check for TP Point component
       hitPoint = hit.transform.GetComponent<TPPoint>();
       if (hitPoint == null)
       {
-        // Try to find parent with TP Point
         hitPoint = hit.transform.GetComponentInParent<TPPoint>();
       }
-
-      // Log what we hit
-      if (hitPoint != null)
-      {
-        Debug.Log("Pointing at teleporter: " + hitPoint.name + " (distance: " + hit.distance.ToString("F2") + "m)");
-      }
-      else
-      {
-        Debug.Log("Hit object: " + hit.transform.name + " (not a teleporter)");
-      }
-    }
-    else
-    {
-      Debug.Log("Not pointing at any teleporter");
     }
 
-    // If target changed
+    // Update target selection
+    UpdateTargetSelection(hitPoint);
+  }
+
+  // Update current target selection
+  void UpdateTargetSelection(TPPoint hitPoint)
+  {
     if (hitPoint != currentTargetPoint)
     {
       // Hide previous target
@@ -510,14 +576,13 @@ public class TeleportSystem : MonoBehaviour
       // Update current target
       currentTargetPoint = hitPoint;
 
-      // If we have a new target, highlight it and hide others
+      // Handle new target
       if (currentTargetPoint != null)
       {
-        // Keep current target visible
+        // Highlight current target
         currentTargetPoint.HighlightPoint();
-        Debug.Log("TARGET SELECTED: " + currentTargetPoint.name);
 
-        // Hide all other points
+        // Hide other points
         foreach (TPPoint point in tpPoints)
         {
           if (point != currentTargetPoint)
@@ -528,7 +593,7 @@ public class TeleportSystem : MonoBehaviour
       }
       else
       {
-        // If no target, reveal all points again
+        // No target - reveal all points
         foreach (TPPoint point in tpPoints)
         {
           point.RevealPoint(revealDuration);
@@ -537,53 +602,12 @@ public class TeleportSystem : MonoBehaviour
     }
   }
 
-  // NEW APPROACH: Use individual beam segments that are positioned in world space
-  private void UpdateBeamVisual(Vector3 origin, Vector3 direction, Quaternion rotation)
-  {
-    if (beamSegmentObjects == null || beamSegmentObjects.Length == 0)
-      return;
-
-    float beamLength = raycastDistance;
-
-    // Place and orient each beam segment
-    for (int i = 0; i < beamSegmentObjects.Length; i++)
-    {
-      GameObject segment = beamSegmentObjects[i];
-      if (segment == null) continue;
-
-      // Calculate segment position (center of segment)
-      float segStart = (float)i / beamSegmentObjects.Length;
-      float segEnd = (float)(i + 1) / beamSegmentObjects.Length;
-      float segCenter = (segStart + segEnd) / 2;
-
-      // Position at center of segment
-      Vector3 segmentPosition = origin + direction * (beamLength * segCenter);
-      segment.transform.position = segmentPosition;
-
-      // Orient towards the ray direction
-      segment.transform.rotation = Quaternion.LookRotation(direction) * Quaternion.Euler(90, 0, 0);
-
-      // Scale based on width and segment length
-      float segmentLength = beamLength / beamSegmentObjects.Length;
-      float segmentWidth = Mathf.Lerp(beamWidth, beamEndWidth, segCenter);
-      segment.transform.localScale = new Vector3(segmentWidth, segmentLength, 1);
-
-      // Update color - fade to transparent
-      if (segment.GetComponent<Renderer>() != null)
-      {
-        Renderer renderer = segment.GetComponent<Renderer>();
-        Color segColor = Color.Lerp(beamStartColor, beamEndColor, segCenter);
-        renderer.material.color = segColor;
-      }
-    }
-  }
-
+  // - TELEPORTATION SYSTEM
+  // Execute teleportation to selected target
   void TriggerTeleport()
   {
     if (!isTeleporterActive)
       return;
-
-    Debug.Log("Teleport triggered");
 
     // Hide beam
     if (showBeam)
@@ -591,165 +615,175 @@ public class TeleportSystem : MonoBehaviour
       SetBeamActive(false);
     }
 
-    // Teleport to the target point if one is selected
+    // Execute teleport if target selected
     if (currentTargetPoint != null)
     {
-      Vector3 targetPosition = currentTargetPoint.transform.position;
+      ExecuteTeleportation();
+    }
 
-      // Keep original Y position of the player to avoid changing height
-      targetPosition.y = transform.position.y;
+    // Hide all TP points
+    HideAllTPPoints();
 
-      Debug.Log("TELEPORTING to: " + currentTargetPoint.name + " at position " + targetPosition);
+    // Reset teleporter state
+    ResetTeleporterState();
+  }
 
-      // Find held objects to teleport with the player
-      List<Transform> heldObjects = new List<Transform>();
+  // Execute the actual teleportation
+  void ExecuteTeleportation()
+  {
+    Vector3 targetPosition = currentTargetPoint.transform.position;
+    targetPosition.y = transform.position.y; // Maintain player height
 
-      if (teleportHeldObjects)
-      {
-        // Find objects held by the player
-        FindHeldObjects(heldObjects);
+    // Handle held objects
+    List<Transform> heldObjects = new List<Transform>();
+    List<Vector3> relativePositions = new List<Vector3>();
 
-        if (heldObjects.Count > 0)
-        {
-          Debug.Log("Found " + heldObjects.Count + " held objects to teleport");
-        }
-      }
+    if (teleportHeldObjects)
+    {
+      FindHeldObjects(heldObjects);
 
-      // Get the original positions relative to the player
-      List<Vector3> relativePositions = new List<Vector3>();
+      // Store relative positions
       foreach (Transform heldObj in heldObjects)
       {
         relativePositions.Add(heldObj.position - transform.position);
       }
-
-      // Store original position for debugging
-      Vector3 oldPosition = transform.position;
-
-      // Teleport the player (this transform)
-      transform.position = targetPosition;
-
-      // Move held objects with the player
-      for (int i = 0; i < heldObjects.Count; i++)
-      {
-        if (heldObjects[i] != null)
-        {
-          // Maintain the relative position to the player
-          heldObjects[i].position = transform.position + relativePositions[i];
-          Debug.Log("Teleported held object: " + heldObjects[i].name);
-        }
-      }
-
-      Debug.Log("Teleportation complete: Player moved from " + oldPosition + " to " + transform.position);
     }
-    else
+
+    // Teleport player
+    transform.position = targetPosition;
+
+    // Move held objects
+    for (int i = 0; i < heldObjects.Count; i++)
     {
-      Debug.Log("No teleport target selected - teleportation canceled");
+      if (heldObjects[i] != null)
+      {
+        heldObjects[i].position = transform.position + relativePositions[i];
+      }
     }
+  }
 
-    // Ensure ALL points are fully hidden when teleporting ends
-    // This fixes the bug where some points might stay visible when not teleporting
+  // Hide all TP points immediately
+  void HideAllTPPoints()
+  {
     foreach (TPPoint point in tpPoints)
     {
-      // Force immediate hiding instead of animation to ensure they're hidden
       point.ForceHidePoint();
     }
+  }
 
-    // Reset state
+  // Reset teleporter to inactive state
+  void ResetTeleporterState()
+  {
     currentTargetPoint = null;
     isTeleporterActive = false;
   }
 
-  // Find objects the player is holding
+  // - HELD OBJECT DETECTION
+  // Find objects currently held by player
   private void FindHeldObjects(List<Transform> heldObjects)
   {
     heldObjects.Clear();
 
-    // Try to find directly held objects through physics grabbing
+    // Search for objects near player
     Collider[] nearbyObjects = Physics.OverlapSphere(transform.position, 1.5f);
 
     foreach (Collider col in nearbyObjects)
     {
       bool isHeld = false;
 
-      // Check if the object is on a grabbable layer
-      foreach (string layerName in grabLayerNames)
-      {
-        int layerIndex = LayerMask.NameToLayer(layerName);
-        if (layerIndex != -1 && col.gameObject.layer == layerIndex)
-        {
-          isHeld = true;
-          break;
-        }
-      }
+      // Check grabbable layers
+      isHeld = CheckGrabbableLayers(col);
 
-      // Alternative: Check if the object has a joint connected to the player or controllers
+      // Check physics joints
       if (!isHeld)
       {
-        Joint[] joints = col.GetComponentsInChildren<Joint>();
-        foreach (Joint joint in joints)
-        {
-          if (joint.connectedBody != null)
-          {
-            // Check if connected to player or controller
-            if (joint.connectedBody.transform.IsChildOf(transform) ||
-                joint.connectedBody.transform == transform)
-            {
-              isHeld = true;
-              break;
-            }
-          }
-        }
+        isHeld = CheckPhysicsJoints(col);
       }
 
-      // Check for any XR interaction system markers
+      // Check XR interaction components
       if (!isHeld)
       {
-        // Check for common XR interaction component names
-        string[] interactionComponentNames = new string[] {
-                    "XRGrabInteractable", "OVRGrabbable", "Grabbable", "GrabPoint"
-                };
-
-        foreach (string compName in interactionComponentNames)
-        {
-          Component comp = col.GetComponent(compName);
-          if (comp != null)
-          {
-            // Try to use reflection to check if it's grabbed
-            try
-            {
-              System.Reflection.PropertyInfo isGrabbedProp = comp.GetType().GetProperty("isGrabbed");
-              if (isGrabbedProp != null)
-              {
-                bool grabbed = (bool)isGrabbedProp.GetValue(comp);
-                if (grabbed)
-                {
-                  isHeld = true;
-                  break;
-                }
-              }
-            }
-            catch (System.Exception)
-            {
-              // Ignore reflection errors
-            }
-
-            // If we can't check dynamically, assume it might be held
-            isHeld = true;
-            break;
-          }
-        }
+        isHeld = CheckXRInteractionComponents(col);
       }
 
-      // If any check passed, add to held objects
+      // Add to held objects if detected as held
       if (isHeld && !heldObjects.Contains(col.transform))
       {
         heldObjects.Add(col.transform);
-        Debug.Log("Found held object: " + col.name);
       }
     }
   }
 
-  // Called when the script is destroyed
+  // Check if object is on grabbable layer
+  bool CheckGrabbableLayers(Collider col)
+  {
+    foreach (string layerName in grabLayerNames)
+    {
+      int layerIndex = LayerMask.NameToLayer(layerName);
+      if (layerIndex != -1 && col.gameObject.layer == layerIndex)
+      {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Check for physics joints connecting to player
+  bool CheckPhysicsJoints(Collider col)
+  {
+    Joint[] joints = col.GetComponentsInChildren<Joint>();
+    foreach (Joint joint in joints)
+    {
+      if (joint.connectedBody != null)
+      {
+        if (joint.connectedBody.transform.IsChildOf(transform) ||
+            joint.connectedBody.transform == transform)
+        {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // Check for XR interaction system components
+  bool CheckXRInteractionComponents(Collider col)
+  {
+    string[] interactionComponentNames = new string[] {
+      "XRGrabInteractable", "OVRGrabbable", "Grabbable", "GrabPoint"
+    };
+
+    foreach (string compName in interactionComponentNames)
+    {
+      Component comp = col.GetComponent(compName);
+      if (comp != null)
+      {
+        // Try to check grab state via reflection
+        try
+        {
+          System.Reflection.PropertyInfo isGrabbedProp = comp.GetType().GetProperty("isGrabbed");
+          if (isGrabbedProp != null)
+          {
+            bool grabbed = (bool)isGrabbedProp.GetValue(comp);
+            if (grabbed)
+            {
+              return true;
+            }
+          }
+        }
+        catch (System.Exception)
+        {
+          // Ignore reflection errors
+        }
+
+        // Assume might be held if component exists
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // - CLEANUP
   void OnDestroy()
   {
     // Clean up beam segments
@@ -764,7 +798,7 @@ public class TeleportSystem : MonoBehaviour
       }
     }
 
-    // Clean up materials
+    // Clean up material instance
     if (beamMaterialInstance != null)
     {
       Destroy(beamMaterialInstance);

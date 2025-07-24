@@ -1,157 +1,124 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
-using System.Linq; // Required for OrderBy
+using System.Linq;
 
+// - SCENE FINGERPRINT DETECTOR MAIN CLASS
 public class SceneFingerprintDetector : MonoBehaviour
 {
+  // - INSPECTOR CONFIGURATION
   [Header("Fingerprint Settings")]
   [SerializeField] private string fingerprintTag = "Fingerprint";
   [SerializeField] private string fingerprintLayer = "UV";
+  [SerializeField] private Mesh fingerprintMeshAsset;
 
-  [Header("Debug Settings")]
-  [SerializeField] private bool debugOutput = true;
-
-  // Reference to your EvidenceChecklist (if needed for communication)
-  // Drag and drop your EvidenceChecklist GameObject here in the Inspector
+  [Header("Evidence Checklist Integration")]
   [SerializeField] private EvidenceChecklist evidenceChecklist;
 
+  // - STATE VARIABLES
+  // Detected fingerprint tracking
   private List<GameObject> detectedFingerprints = new List<GameObject>();
 
+  // - UNITY LIFECYCLE METHODS
   void Start()
   {
-    // Automatically find EvidenceChecklist if not assigned
+    // Automatically find evidence checklist if not assigned
     if (evidenceChecklist == null)
     {
       evidenceChecklist = FindObjectOfType<EvidenceChecklist>();
-      if (evidenceChecklist != null && debugOutput)
-      {
-        //Debug.Log("SceneFingerprintDetector: Found EvidenceChecklist automatically.");
-      }
     }
 
-    // Perform an initial detection scan when the scene starts
+    // Perform initial scene scan
     DetectAllFingerprintsInScene();
   }
 
-  /// <summary>
-  /// Detects all active fingerprint objects in the entire scene.
-  /// </summary>
+  // - FINGERPRINT DETECTION SYSTEM
   public void DetectAllFingerprintsInScene()
   {
-    detectedFingerprints.Clear(); // Clear previous detections
+    // Scan entire scene for fingerprint objects
+    detectedFingerprints.Clear();
 
-    // Find all GameObjects in the scene
-    // NOTE: This can be performance-heavy in scenes with thousands of objects.
-    // For production, consider object pooling or more targeted search if performance is an issue.
     GameObject[] allActiveGameObjects = FindObjectsOfType<GameObject>();
-
-    if (debugOutput)
-    {
-      //Debug.Log("SceneFingerprintDetector: Starting full scene fingerprint scan...");
-    }
 
     foreach (GameObject obj in allActiveGameObjects)
     {
-      if (obj != null && IsFingerprint(obj))
+      // Only process active game objects
+      if (obj != null && obj.activeInHierarchy && IsFingerprint(obj))
       {
         detectedFingerprints.Add(obj);
-        // Communicate to EvidenceChecklist if it exists
+
+        // Notify evidence checklist if available
         if (evidenceChecklist != null)
         {
-          try
-          {
-            evidenceChecklist.OnFingerprintEnteredBox(obj); // Reusing this method, assuming it handles "found in scene"
-          }
-          catch (System.Exception e)
-          {
-            Debug.LogError($"SceneFingerprintDetector: Error communicating with EvidenceChecklist for {obj.name}: {e.Message}");
-          }
+          evidenceChecklist.OnFingerprintEnteredBox(obj);
         }
       }
     }
-
-    if (debugOutput)
-    {
-      OutputDetectedFingerprints();
-    }
   }
 
-  /// <summary>
-  /// Checks if a given GameObject is considered a fingerprint based on tag, layer, and name pattern.
-  /// This logic is taken directly from your original script's robust IsFingerprint method.
-  /// </summary>
+  // - FINGERPRINT VALIDATION
   private bool IsFingerprint(GameObject obj)
   {
+    // Check if object meets fingerprint criteria
     if (obj == null) return false;
 
-    // Check tag
-    bool hasCorrectTag = obj.CompareTag(fingerprintTag);
+    // Ensure the object is active in the hierarchy
+    if (!obj.activeInHierarchy) return false;
 
-    // Check layer
+    // Check for MeshRenderer component
+    MeshRenderer meshRenderer = obj.GetComponent<MeshRenderer>();
+    if (meshRenderer == null) return false;
+
+    // Check for correct mesh
+    MeshFilter meshFilter = obj.GetComponent<MeshFilter>();
+    if (meshFilter == null || meshFilter.sharedMesh == null) return false;
+
+    // Compare the sharedMesh with the serialized fingerprintMeshAsset
+    if (fingerprintMeshAsset == null || meshFilter.sharedMesh != fingerprintMeshAsset)
+    {
+      return false;
+    }
+
+    // Validate fingerprint tag
+    bool hasCorrectTag = obj.CompareTag(fingerprintTag);
+    if (!hasCorrectTag) return false;
+
+    // Validate fingerprint layer
     int layerIndex = LayerMask.NameToLayer(fingerprintLayer);
     bool onCorrectLayer = layerIndex != -1 && obj.layer == layerIndex;
+    if (!onCorrectLayer) return false;
 
-    // Check name pattern - EXACT SAME LOGIC AS YOUR ORIGINAL SCRIPT
+    // Validate fingerprint name pattern
     string objName = obj.name;
     bool hasCorrectName = objName == "Fingerprint" ||
                           (objName.StartsWith("Fingerprint (") && objName.EndsWith(")"));
+    if (!hasCorrectName) return false;
 
-    bool isValid = hasCorrectTag && onCorrectLayer && hasCorrectName;
-
-    if (debugOutput && objName.Contains("Fingerprint")) // Only log details for potential fingerprints
-    {
-      //Debug.Log($"SceneFingerprintDetector: Validation for {objName}: Tag={hasCorrectTag}, Layer={onCorrectLayer}, NamePattern={hasCorrectName} -> RESULT: {isValid}");
-    }
-
-    return isValid;
+    return true;
   }
 
-  /// <summary>
-  /// Outputs the list of detected fingerprints to the console in alphabetical order.
-  /// </summary>
+  // - PUBLIC API METHODS
+  public List<GameObject> GetDetectedFingerprints()
+  {
+    // Get copy of detected fingerprints list
+    return new List<GameObject>(detectedFingerprints);
+  }
+
   public void OutputDetectedFingerprints()
   {
-    // Clean up null entries in case objects were destroyed
+    // Output detected fingerprints information
     detectedFingerprints.RemoveAll(obj => obj == null);
 
     if (detectedFingerprints.Count == 0)
     {
-      //Debug.Log("=== SCENE FINGERPRINTS ===\nNo fingerprints detected in the scene.\n=== END SCENE FINGERPRINTS ===");
       return;
     }
 
+    // Sort fingerprints alphabetically
     var sortedFingerprints = detectedFingerprints.OrderBy(obj => obj.name).ToList();
 
-    //Debug.Log("=== SCENE FINGERPRINTS (ALPHABETICAL) ===");
-    //Debug.Log($"Total fingerprints detected: {sortedFingerprints.Count}");
-    //Debug.Log("---");
-
-    for (int i = 0; i < sortedFingerprints.Count; i++)
+    foreach (var fingerprint in sortedFingerprints)
     {
-      GameObject fp = sortedFingerprints[i];
-      //Debug.Log($"{i + 1:D3}. {fp.name}");
+      // Output fingerprint details
     }
-
-    //Debug.Log("=== END SCENE FINGERPRINTS ===");
-  }
-
-  // Public API to get the detected fingerprints
-  public List<GameObject> GetDetectedFingerprints()
-  {
-    // Return a copy to prevent external modification of the internal list
-    return new List<GameObject>(detectedFingerprints);
-  }
-
-  // Context Menu for easy testing in the editor
-  [ContextMenu("Detect All Fingerprints Now")]
-  public void EditorDetectAllFingerprintsNow()
-  {
-    DetectAllFingerprintsInScene();
-  }
-
-  [ContextMenu("Output Detected Fingerprints")]
-  public void EditorOutputDetectedFingerprints()
-  {
-    OutputDetectedFingerprints();
   }
 }

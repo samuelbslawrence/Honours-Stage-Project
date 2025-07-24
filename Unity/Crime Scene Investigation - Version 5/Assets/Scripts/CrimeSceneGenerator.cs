@@ -1,18 +1,8 @@
-﻿/*
- * CrimeSceneGenerator - Evidence Spawning System
- * MODIFIED: Removed all random positioning - uses only fixed spawn point locations
- * 
- * FIXED POSITIONING SYSTEM:
- * - Uses exact spawn point positions with NO random offsets
- * - Evidence spawns precisely at the Transform position of spawn point empties
- * - No fallback random positioning - logs warnings instead
- * - Deterministic evidence placement for consistent results
- */
-
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+// - SPAWN LOCATION ENUM
 [System.Serializable]
 public enum SpawnLocation
 {
@@ -22,8 +12,10 @@ public enum SpawnLocation
   Any
 }
 
+// - CRIME SCENE GENERATOR MAIN CLASS
 public class CrimeSceneGenerator : MonoBehaviour
 {
+  // - INSPECTOR CONFIGURATION
   [Header("LOCATION SELECTION")]
   public bool enableLocationSelection = true;
   public bool useRandomSelection = true;
@@ -261,13 +253,11 @@ public class CrimeSceneGenerator : MonoBehaviour
   [Header("Generation Settings")]
   public bool generateOnStart = true;
   public bool clearPreviousScene = true;
-  // REMOVED: spawnRadius - no longer needed since we use exact positions
   public float tableHeightOffset = 0.0f;
 
   [Header("Real-Time Integration")]
   public bool enableRealTimeNotifications = true;
   public float notificationDelay = 0.2f;
-  public bool debugIntegration = true;
 
   [Header("Auto-Generate (Testing)")]
   public bool autoGenerate = false;
@@ -284,14 +274,12 @@ public class CrimeSceneGenerator : MonoBehaviour
   public bool autoFindCameraScript = true;
   public bool notifyCameraOnGeneration = true;
 
-  [Header("Debug")]
-  public bool showDebugInfo = false;
-  public bool debugShowBounds = false;
-
   [Header("Scenario Presets")]
   public bool useScenarioPresets = false;
   public int selectedScenarioIndex = 0;
 
+  // - STATE VARIABLES
+  // Scene object tracking
   private List<GameObject> spawnedObjects = new List<GameObject>();
   private List<Transform> spawnedTables = new List<Transform>();
   private System.Random randomizer;
@@ -301,7 +289,7 @@ public class CrimeSceneGenerator : MonoBehaviour
   private CurrentLocation currentLocation = CurrentLocation.Fallback;
   private bool isLocationDecided = false;
 
-  // Real-time tracking for integration
+  // Real-time integration tracking
   private List<string> currentSceneEvidenceNames = new List<string>();
   private List<GameObject> currentSceneEvidenceObjects = new List<GameObject>();
   private int lastGenerationFrame = -1;
@@ -325,6 +313,7 @@ public class CrimeSceneGenerator : MonoBehaviour
         "Assault Scene"
   };
 
+  // - UNITY LIFECYCLE METHODS
   void Start()
   {
     if (randomizer == null)
@@ -358,6 +347,12 @@ public class CrimeSceneGenerator : MonoBehaviour
     }
   }
 
+  void OnDisable()
+  {
+    StopAutoGeneration();
+  }
+
+  // - PROBABILITY NORMALIZATION
   void NormalizeProbabilities()
   {
     float total = barProbability + officeProbability + homeProbability;
@@ -375,7 +370,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     }
   }
 
-  // LOCATION SELECTION METHODS
+  // - LOCATION SELECTION METHODS
   [ContextMenu("Generate Random Location")]
   public void GenerateRandomLocation()
   {
@@ -407,6 +402,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     GenerateScene();
   }
 
+  // - SCENE LOCATION DECISION
   private void DecideSceneLocation()
   {
     if (!enableLocationSelection)
@@ -455,6 +451,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     isLocationDecided = true;
   }
 
+  // - LOCATION-SPECIFIC OBJECT HANDLING
   private void HandleLocationSpecificObjects()
   {
     if (!enableLocationSelection || !isLocationDecided)
@@ -488,6 +485,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     }
   }
 
+  // - HIDE ALL LOCATION OBJECTS
   private void HideAllLocationSpecificObjects()
   {
     if (barSceneParent != null) barSceneParent.SetActive(false);
@@ -526,6 +524,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     }
   }
 
+  // - OBJECT HIDING HELPERS
   private void HideLocationObjects(GameObject mainObject, GameObject[] linkedObjects)
   {
     if (mainObject != null)
@@ -546,6 +545,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     }
   }
 
+  // - BAR SCENE SETUP
   private void ShowHideBarObjects()
   {
     if (spawnedTables == null)
@@ -565,6 +565,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     ProcessSimpleObjects(barFurnitureObjects, barFurnitureNames, barFurnitureShowProbability);
   }
 
+  // - OFFICE SCENE SETUP
   private void ShowHideOfficeObjects()
   {
     if (spawnedTables == null)
@@ -584,6 +585,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     ProcessSimpleObjects(officeFurnitureObjects, officeFurnitureNames, officeFurnitureShowProbability);
   }
 
+  // - HOME SCENE SETUP
   private void ShowHideHomeObjects()
   {
     if (spawnedTables == null)
@@ -603,6 +605,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     ProcessSimpleObjects(homeFurnitureObjects, homeFurnitureNames, homeFurnitureShowProbability);
   }
 
+  // - TABLE PROCESSING
   private void ProcessLocationTable(GameObject tableObject, string tableName, float showProbability,
                                    Transform[] spawnPoints, GameObject[] linkedObjects, float[] linkedObjectProbability)
   {
@@ -637,6 +640,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     }
   }
 
+  // - SIMPLE OBJECT PROCESSING
   private void ProcessSimpleObjects(GameObject[] objects, string[] names, float[] showProbability)
   {
     if (objects == null) return;
@@ -650,6 +654,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     }
   }
 
+  // - LINKED OBJECT HIDING
   private void HideLinkedObjects(GameObject[] linkedObjects)
   {
     if (linkedObjects != null)
@@ -662,6 +667,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     }
   }
 
+  // - SPAWN POINT RETRIEVAL
   Transform[] GetLocationSpecificSpawnPoints(SpawnLocation location)
   {
     List<Transform> validPoints = new List<Transform>();
@@ -708,7 +714,7 @@ public class CrimeSceneGenerator : MonoBehaviour
       }
     }
 
-    // FILTER OUT INACTIVE SPAWN POINTS - This fixes the bug where evidence spawns on hidden tables
+    // Filter out inactive spawn points
     List<Transform> activeValidPoints = new List<Transform>();
     foreach (Transform point in validPoints)
     {
@@ -721,7 +727,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     return activeValidPoints.ToArray();
   }
 
-  // PUBLIC API
+  // - PUBLIC API METHODS
   public string GetCurrentLocationName()
   {
     switch (currentLocation)
@@ -744,6 +750,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     }
   }
 
+  // - PROBABILITY SETTERS
   public void SetBarProbability(float probability)
   {
     barProbability = Mathf.Clamp01(probability);
@@ -776,6 +783,34 @@ public class CrimeSceneGenerator : MonoBehaviour
     NormalizeProbabilities();
   }
 
+  // - EVIDENCE PREFAB VISIBILITY MANAGEMENT
+  private void HideAllEvidencePrefabs()
+  {
+    if (evidencePrefabs == null) return;
+
+    foreach (GameObject evidencePrefab in evidencePrefabs)
+    {
+      if (evidencePrefab != null)
+      {
+        evidencePrefab.SetActive(false);
+      }
+    }
+  }
+
+  private void ShowAllEvidencePrefabs()
+  {
+    if (evidencePrefabs == null) return;
+
+    foreach (GameObject evidencePrefab in evidencePrefabs)
+    {
+      if (evidencePrefab != null)
+      {
+        evidencePrefab.SetActive(true);
+      }
+    }
+  }
+
+  // - SCENE GENERATION
   [ContextMenu("GENERATE AGAIN")]
   public void GenerateAgain()
   {
@@ -790,6 +825,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     if (randomizer == null)
       randomizer = new System.Random();
 
+    // Reset fingerprints from previous scene
     DustBrush dustBrush = FindObjectOfType<DustBrush>();
     if (dustBrush != null)
     {
@@ -798,21 +834,29 @@ public class CrimeSceneGenerator : MonoBehaviour
 
     lastGenerationFrame = Time.frameCount;
 
+    // Determine scene location
     if (enableLocationSelection)
     {
       DecideSceneLocation();
     }
 
+    // Clear previous scene objects
     if (clearPreviousScene)
     {
       ClearScene();
     }
 
+    // Hide all evidence prefabs to prevent duplicates
+    HideAllEvidencePrefabs();
+
+    // Reset evidence tracking
     currentSceneEvidenceNames.Clear();
     currentSceneEvidenceObjects.Clear();
 
+    // Show/hide furniture based on location
     HandleLocationSpecificObjects();
 
+    // Generate evidence using either presets or random selection
     if (useScenarioPresets && scenarioPresets.Length > 0)
     {
       GenerateFromPreset();
@@ -822,18 +866,14 @@ public class CrimeSceneGenerator : MonoBehaviour
       GenerateRandomScene();
     }
 
-    if (showDebugInfo)
-    {
-      LogSceneInfo();
-    }
-
+    // Notify other systems of scene generation
     if (enableRealTimeNotifications)
     {
       StartCoroutine(NotifySystemsAfterGeneration());
     }
   }
 
-  // FALLBACK METHODS (for when location selection is disabled)
+  // - FALLBACK METHODS
   void ShowHideFallbackTables()
   {
     if (spawnedTables == null)
@@ -893,6 +933,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     }
   }
 
+  // - COMPONENT INTEGRATION
   void FindIntegrationComponents()
   {
     if (autoFindEvidenceChecklist && evidenceChecklist == null)
@@ -906,6 +947,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     }
   }
 
+  // - AUTO-GENERATION SYSTEM
   void StartAutoGeneration()
   {
     if (autoGenerateCoroutine == null && Application.isPlaying)
@@ -937,11 +979,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     autoGenerateCoroutine = null;
   }
 
-  void OnDisable()
-  {
-    StopAutoGeneration();
-  }
-
+  // - ARRAY VALIDATION AND CLEANUP
   void ValidateArrayLengths()
   {
     int evidenceCount = evidencePrefabs.Length;
@@ -1114,6 +1152,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     }
   }
 
+  // - SYSTEM NOTIFICATION
   private IEnumerator NotifySystemsAfterGeneration()
   {
     yield return new WaitForEndOfFrame();
@@ -1132,6 +1171,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     }
   }
 
+  // - PRESET GENERATION
   void GenerateFromPreset()
   {
     if (selectedScenarioIndex >= scenarioPresets.Length)
@@ -1148,6 +1188,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     }
   }
 
+  // - RANDOM GENERATION
   void GenerateRandomScene()
   {
     int evidenceCount = randomizer.Next(minEvidenceItems, maxEvidenceItems + 1);
@@ -1159,6 +1200,7 @@ public class CrimeSceneGenerator : MonoBehaviour
         availableIndices.Add(i);
     }
 
+    // Shuffle available indices
     for (int i = 0; i < availableIndices.Count; i++)
     {
       int temp = availableIndices[i];
@@ -1183,7 +1225,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     }
   }
 
-  // MODIFIED SPAWN EVIDENCE METHOD - FIXED POSITIONING ONLY WITH WARNING INSTEAD OF ERROR
+  // - EVIDENCE SPAWNING
   void SpawnEvidence(int evidenceIndex)
   {
     if (evidenceIndex >= evidencePrefabs.Length || evidencePrefabs[evidenceIndex] == null)
@@ -1196,29 +1238,30 @@ public class CrimeSceneGenerator : MonoBehaviour
 
     if (spawnPoints.Length == 0)
     {
-      Debug.LogWarning($"NO SPAWN POINTS FOUND for {evidenceNames[evidenceIndex]}! Skipping evidence spawn - please add spawn points.");
-      return; // Skip this evidence and continue with others
+      return;
     }
 
-    // Select a spawn point (still random selection, but exact positioning)
+    // Select a spawn point
     selectedSpawnPoint = spawnPoints[randomizer.Next(spawnPoints.Length)];
 
     if (selectedSpawnPoint == null)
     {
-      Debug.LogWarning($"SELECTED SPAWN POINT IS NULL for {evidenceNames[evidenceIndex]}! Skipping evidence spawn.");
-      return; // Skip this evidence and continue with others
+      return;
     }
 
-    // USE EXACT SPAWN POINT POSITION - NO RANDOM OFFSET
+    // Use exact spawn point position
     targetPosition = selectedSpawnPoint.position;
 
     // Instantiate evidence prefab
     GameObject spawnedEvidence = Instantiate(evidencePrefabs[evidenceIndex], Vector3.zero, Quaternion.identity);
 
+    // Ensure the spawned evidence is active
+    spawnedEvidence.SetActive(true);
+
     // Position the evidence exactly at the spawn point
     PositionEvidenceUsingOrigin(spawnedEvidence, targetPosition);
 
-    // Rotate evidence randomly on Y-axis (only rotation randomness, not position)
+    // Rotate evidence randomly on Y-axis
     spawnedEvidence.transform.Rotate(0, randomizer.Next(0, 360), 0);
 
     spawnedObjects.Add(spawnedEvidence);
@@ -1231,26 +1274,17 @@ public class CrimeSceneGenerator : MonoBehaviour
     string evidenceName = evidenceNames[evidenceIndex];
     currentSceneEvidenceNames.Add(evidenceName);
     currentSceneEvidenceObjects.Add(spawnedEvidence);
-
-    // EVIDENCE SPAWN COORDINATES LOGGING
-    Debug.Log($"[EVIDENCE SPAWN - FIXED POSITION] {evidenceName}");
-    Debug.Log($"  Spawn Point: {selectedSpawnPoint.name} at {selectedSpawnPoint.position}");
-    Debug.Log($"  Target Position: {targetPosition}");
-    Debug.Log($"  Final Evidence Position: {spawnedEvidence.transform.position}");
-    Debug.Log($"  NO RANDOM OFFSET APPLIED - EXACT POSITIONING");
   }
 
-  // SIMPLIFIED POSITIONING METHOD
+  // - EVIDENCE POSITIONING
   void PositionEvidenceUsingOrigin(GameObject evidenceObject, Vector3 targetPosition)
   {
     if (evidenceObject == null) return;
 
-    // Position evidence directly at the exact spawn point position
     evidenceObject.transform.position = targetPosition;
-
-    Debug.Log($"Positioned {evidenceObject.name} exactly at {targetPosition}");
   }
 
+  // - SPAWN POINT SELECTION
   Transform[] GetAppropriateSpawnPoints(int evidenceIndex)
   {
     List<Transform> validPoints = new List<Transform>();
@@ -1311,7 +1345,7 @@ public class CrimeSceneGenerator : MonoBehaviour
       }
     }
 
-    // FILTER OUT INACTIVE SPAWN POINTS - This fixes the bug where evidence spawns on hidden tables
+    // Filter out inactive spawn points
     List<Transform> activeValidPoints = new List<Transform>();
     foreach (Transform point in validPoints)
     {
@@ -1321,20 +1355,18 @@ public class CrimeSceneGenerator : MonoBehaviour
       }
     }
 
-    if (activeValidPoints.Count == 0 && validPoints.Count > 0)
-    {
-      Debug.LogWarning($"All spawn points for {location} are inactive! Evidence cannot spawn properly for {evidenceNames[evidenceIndex]}");
-    }
-
     return activeValidPoints.ToArray();
   }
 
+  // - SCENE CLEARING
   [ContextMenu("Clear Scene")]
   public void ClearScene()
   {
+    // Reset evidence tracking
     currentSceneEvidenceNames.Clear();
     currentSceneEvidenceObjects.Clear();
 
+    // Destroy all spawned objects
     if (spawnedObjects != null)
     {
       foreach (GameObject obj in spawnedObjects)
@@ -1350,9 +1382,14 @@ public class CrimeSceneGenerator : MonoBehaviour
       spawnedObjects.Clear();
     }
 
+    // Clear table tracking
     if (spawnedTables != null)
       spawnedTables.Clear();
 
+    // Show all evidence prefabs again when clearing
+    ShowAllEvidencePrefabs();
+
+    // Notify integrated systems
     if (enableRealTimeNotifications)
     {
       if (notifyChecklistOnGeneration && evidenceChecklist != null)
@@ -1367,15 +1404,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     }
   }
 
-  void LogSceneInfo()
-  {
-    string locationName = GetCurrentLocationName();
-    Debug.Log($"Generated {locationName} scene with {spawnedObjects.Count} total objects:");
-    Debug.Log($"- {spawnedTables.Count} table surfaces available for evidence");
-    Debug.Log($"- {currentSceneEvidenceNames.Count} evidence items: {string.Join(", ", currentSceneEvidenceNames)}");
-  }
-
-  // Public API methods
+  // - PUBLIC API GETTERS
   public string[] GetEvidenceNames()
   {
     if (evidenceNames == null) return new string[0];
@@ -1403,10 +1432,7 @@ public class CrimeSceneGenerator : MonoBehaviour
 
   public int GetSpawnedObjectCount() => spawnedObjects.Count;
   public int GetCurrentEvidenceCount() => currentSceneEvidenceNames.Count;
-  /// <summary>
-  /// Get all fingerprints in the current scene (including children of spawned objects)
-  /// This helps the EvidenceChecklist track fingerprint completion
-  /// </summary>
+
   public GameObject[] GetAllFingerprintsInScene()
   {
     List<GameObject> allFingerprints = new List<GameObject>();
@@ -1447,15 +1473,24 @@ public class CrimeSceneGenerator : MonoBehaviour
       }
     }
 
-    Debug.Log($"CrimeSceneGenerator: Found {allFingerprints.Count} total fingerprints in scene");
     return allFingerprints.ToArray();
   }
 
-  /// <summary>
-  /// Get the count of fingerprints in the current scene
-  /// </summary>
   public int GetFingerprintCount()
   {
     return GetAllFingerprintsInScene().Length;
+  }
+
+  // - CONTEXT MENU TESTING METHODS
+  [ContextMenu("Hide All Evidence Prefabs")]
+  public void HideAllEvidencePrefabsMenu()
+  {
+    HideAllEvidencePrefabs();
+  }
+
+  [ContextMenu("Show All Evidence Prefabs")]
+  public void ShowAllEvidencePrefabsMenu()
+  {
+    ShowAllEvidencePrefabs();
   }
 }

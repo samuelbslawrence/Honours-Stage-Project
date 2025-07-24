@@ -4,8 +4,10 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 
+// - TOOL SPAWNER MAIN CLASS
 public class ToolSpawner : MonoBehaviour
 {
+  // - INSPECTOR CONFIGURATION
   [Header("Basic Settings")]
   [SerializeField] private Transform attachPoint;
   [SerializeField] private Vector3 positionOffset = new Vector3(-0.1f, 0.3f, 0.1f);
@@ -22,15 +24,13 @@ public class ToolSpawner : MonoBehaviour
   [Header("Scene Generator")]
   [SerializeField] private CrimeSceneGenerator sceneGenerator;
 
-  // CHANGED: Instead of prefabs, we reference existing tools in the scene
   [Header("Existing Tools in Scene")]
-  [SerializeField] private GameObject[] existingTools = new GameObject[4]; // Assign your existing tools here
+  [SerializeField] private GameObject[] existingTools = new GameObject[4];
   [SerializeField] private int[] toolQuantities = new int[] { 1, 1, 1, 3 };
 
-  // NEW: Tool storage position when not in use
   [Header("Tool Storage")]
-  [SerializeField] private Transform toolStorageArea; // Where tools are stored when not in use
-  [SerializeField] private Vector3 storageOffset = new Vector3(0, -10, 0); // Default storage position offset
+  [SerializeField] private Transform toolStorageArea;
+  [SerializeField] private Vector3 storageOffset = new Vector3(0, -10, 0);
 
   [Header("Cross-Script Communication")]
   [SerializeField] private EvidenceChecklist evidenceChecklist;
@@ -45,10 +45,11 @@ public class ToolSpawner : MonoBehaviour
 
   [Header("Audio")]
   [SerializeField] private AudioSource audioSource;
-  [SerializeField] private AudioClip[] audioClips = new AudioClip[3]; // UI, Spawn, Generate
+  [SerializeField] private AudioClip[] audioClips = new AudioClip[3];
 
-  // Core data - simplified
-  private readonly string[] toolNames = { "Camera", "Scanner", "Brush", "UV Light" };
+  // - STATIC DATA ARRAYS
+  // Tool definitions
+  private readonly string[] toolNames = { "Camera", "Brush", "UV Light", "Scanner" };
   private readonly string[] toolDescriptions = {
         "Point and scan to detect evidence automatically",
         "Advanced tool for detailed evidence analysis",
@@ -56,11 +57,13 @@ public class ToolSpawner : MonoBehaviour
         "Reveals hidden evidence under ultraviolet light"
     };
 
+  // Scene generation options
   private readonly string[] generateNames = { "Generate Random Scene" };
   private readonly string[] generateDescriptions = {
         "Create a completely randomized crime scene with varied evidence"
     };
 
+  // Game control options
   private readonly string[] gameNames = { "Quit", "Pause", "Resume" };
   private readonly string[] gameDescriptions = {
         "Return to main menu",
@@ -68,35 +71,41 @@ public class ToolSpawner : MonoBehaviour
         "Resume the game"
     };
 
-  // UI Components
+  // - UI STATE MANAGEMENT
+  // Main UI variables
   private GameObject uiInstance;
   private bool isUIVisible = false;
-  private int currentTab = 0; // 0=Tools, 1=Generate, 2=Game
+  private int currentTab = 0;
   private int selectedIndex = 0;
   private bool vrControlActive = false;
 
-  // VR Input - CHANGED TO LEFT CONTROLLER
+  // - VR INPUT TRACKING
+  // Controller detection and input state
   private List<UnityEngine.XR.InputDevice> leftControllers = new List<UnityEngine.XR.InputDevice>();
-  private bool wasYPressed = false; // Changed from B to Y
-  private bool wasXPressed = false; // Changed from A to X
+  private bool wasYPressed = false;
+  private bool wasXPressed = false;
   private float lastInputTime = 0f;
   private Vector2 lastJoystickInput = Vector2.zero;
 
-  // Tool Management - CHANGED: Track active tools instead of spawned objects
-  private Dictionary<int, bool> toolsActive = new Dictionary<int, bool>(); // Track which tools are currently active
-  private Dictionary<int, Vector3> originalToolPositions = new Dictionary<int, Vector3>(); // Store original positions
+  // - TOOL MANAGEMENT
+  // Tool state tracking
+  private Dictionary<int, bool> toolsActive = new Dictionary<int, bool>();
+  private Dictionary<int, Vector3> originalToolPositions = new Dictionary<int, Vector3>();
 
-  // UI References
+  // - UI COMPONENT REFERENCES
+  // Button and text component lists
   private List<GameObject> allButtons = new List<GameObject>();
   private List<TextMeshProUGUI> buttonTitles = new List<TextMeshProUGUI>();
   private List<TextMeshProUGUI> buttonDescriptions = new List<TextMeshProUGUI>();
 
-  // Singleton
+  // - SINGLETON IMPLEMENTATION
   private static ToolSpawner instance;
   public static ToolSpawner Instance => instance;
 
+  // - UNITY LIFECYCLE METHODS
   void Awake()
   {
+    // Singleton pattern enforcement
     if (instance != null && instance != this)
     {
       Destroy(gameObject);
@@ -107,13 +116,15 @@ public class ToolSpawner : MonoBehaviour
 
   void Start()
   {
+    // Initialize all systems
     SetupComponents();
-    InitializeExistingTools(); // NEW: Initialize existing tools
+    InitializeExistingTools();
     CreateUI();
   }
 
   void Update()
   {
+    // Handle input and UI updates each frame
     HandleInput();
     if (isUIVisible)
     {
@@ -125,25 +136,28 @@ public class ToolSpawner : MonoBehaviour
     }
   }
 
+  // - COMPONENT SETUP
   void SetupComponents()
   {
-    // Find RIGHT controller for attachment - SWAPPED
+    // Find or assign attachment point for UI
     if (attachPoint == null)
     {
       GameObject rightHand = GameObject.Find("RightHandAnchor") ?? GameObject.Find("RightHand");
       attachPoint = rightHand?.transform ?? Camera.main.transform;
     }
 
+    // Auto-find scene components if not assigned
     if (sceneGenerator == null)
       sceneGenerator = FindObjectOfType<CrimeSceneGenerator>();
 
     if (autoFindEvidenceChecklist && evidenceChecklist == null)
       evidenceChecklist = FindObjectOfType<EvidenceChecklist>();
 
+    // Setup audio source
     if (audioSource == null)
       audioSource = gameObject.AddComponent<AudioSource>();
 
-    // NEW: Setup tool storage area if not assigned
+    // Create tool storage area if needed
     if (toolStorageArea == null)
     {
       GameObject storage = new GameObject("ToolStorage");
@@ -152,20 +166,17 @@ public class ToolSpawner : MonoBehaviour
     }
   }
 
-  // NEW: Initialize existing tools in the scene
+  // - TOOL INITIALIZATION
   void InitializeExistingTools()
   {
+    // Setup each existing tool in the scene
     for (int i = 0; i < existingTools.Length; i++)
     {
       if (existingTools[i] != null)
       {
-        // Store original position
+        // Store original position and move to storage
         originalToolPositions[i] = existingTools[i].transform.position;
-
-        // Initialize as inactive
         toolsActive[i] = false;
-
-        // Move to storage and hide
         MoveToolToStorage(i);
       }
       else
@@ -183,9 +194,10 @@ public class ToolSpawner : MonoBehaviour
     }
   }
 
-  // NEW: Move tool to storage area and hide it
+  // - TOOL POSITION MANAGEMENT
   void MoveToolToStorage(int toolIndex)
   {
+    // Hide tool and move to storage area
     if (toolIndex >= 0 && toolIndex < existingTools.Length && existingTools[toolIndex] != null)
     {
       existingTools[toolIndex].transform.position = toolStorageArea.position + Vector3.right * toolIndex * 2f;
@@ -194,9 +206,9 @@ public class ToolSpawner : MonoBehaviour
     }
   }
 
-  // NEW: Move tool to player and show it
   void MoveToolToPlayer(int toolIndex)
   {
+    // Show tool and move to player
     if (toolIndex >= 0 && toolIndex < existingTools.Length && existingTools[toolIndex] != null)
     {
       Vector3 spawnPos = Camera.main.transform.position + Camera.main.transform.forward * 0.5f;
@@ -206,15 +218,16 @@ public class ToolSpawner : MonoBehaviour
     }
   }
 
+  // - INPUT HANDLING
   void HandleInput()
   {
-    // Desktop toggle
+    // Check for UI toggle keys
     if (Input.GetKeyDown(toggleKey) || Input.GetKeyDown(vrToggleKey))
     {
       ToggleUI();
     }
 
-    // VR Input
+    // Process VR input if enabled
     if (useVRControls)
     {
       UpdateVRInput();
@@ -223,16 +236,17 @@ public class ToolSpawner : MonoBehaviour
 
   void HandleMouseInput()
   {
-    // Handle mouse clicks for desktop interaction
+    // Desktop mouse interaction
     if (Input.GetMouseButtonDown(0))
     {
       ExecuteSelection();
     }
   }
 
+  // - VR INPUT PROCESSING
   void UpdateVRInput()
   {
-    // CHANGED TO LEFT CONTROLLER
+    // Get left controller devices
     leftControllers.Clear();
     UnityEngine.XR.InputDevices.GetDevicesWithCharacteristics(
         UnityEngine.XR.InputDeviceCharacteristics.Left | UnityEngine.XR.InputDeviceCharacteristics.Controller,
@@ -243,7 +257,7 @@ public class ToolSpawner : MonoBehaviour
     var controller = leftControllers[0];
     if (!controller.isValid) return;
 
-    // Y Button - Toggle UI (Changed from B to Y)
+    // Y Button for UI toggle
     if (controller.TryGetFeatureValue(UnityEngine.XR.CommonUsages.secondaryButton, out bool yPressed))
     {
       if (yPressed && !wasYPressed)
@@ -259,10 +273,9 @@ public class ToolSpawner : MonoBehaviour
       wasYPressed = yPressed;
     }
 
-    // Only handle navigation if UI is visible and VR control is active
     if (!isUIVisible || !vrControlActive) return;
 
-    // X Button - Select/Execute (Changed from A to X)
+    // X Button for selection
     if (controller.TryGetFeatureValue(UnityEngine.XR.CommonUsages.primaryButton, out bool xPressed))
     {
       if (xPressed && !wasXPressed)
@@ -273,7 +286,7 @@ public class ToolSpawner : MonoBehaviour
       wasXPressed = xPressed;
     }
 
-    // Left Joystick Navigation (Changed from right to left joystick)
+    // Left joystick for navigation
     if (controller.TryGetFeatureValue(UnityEngine.XR.CommonUsages.primary2DAxis, out Vector2 joystick))
     {
       if (Vector2.Distance(joystick, Vector2.zero) > joystickDeadzone)
@@ -283,14 +296,16 @@ public class ToolSpawner : MonoBehaviour
     }
   }
 
+  // - VR NAVIGATION
   void HandleJoystickNavigation(Vector2 input)
   {
+    // Check navigation cooldown
     if (Time.time - lastInputTime < navigationCooldown) return;
     if (Vector2.Distance(input, lastJoystickInput) < joystickDeadzone) return;
 
     bool moved = false;
 
-    // Horizontal movement - Tab navigation
+    // Horizontal movement for tab switching
     if (Mathf.Abs(input.x) > joystickDeadzone && Mathf.Abs(input.x) > Mathf.Abs(input.y))
     {
       if (input.x > 0)
@@ -306,26 +321,28 @@ public class ToolSpawner : MonoBehaviour
 
       if (moved)
       {
-        selectedIndex = 0; // Reset to first button in new tab
+        selectedIndex = 0;
       }
     }
-    // Vertical movement - Button navigation
+    
+    // Vertical movement for button selection
     else if (Mathf.Abs(input.y) > joystickDeadzone)
     {
       int maxIndex = GetMaxIndexForCurrentTab();
 
-      if (input.y > 0) // Up
+      if (input.y > 0)
       {
         selectedIndex = Mathf.Max(0, selectedIndex - 1);
         moved = true;
       }
-      else if (input.y < 0) // Down
+      else if (input.y < 0)
       {
         selectedIndex = Mathf.Min(maxIndex, selectedIndex + 1);
         moved = true;
       }
     }
 
+    // Update navigation state
     if (moved)
     {
       lastInputTime = Time.time;
@@ -334,8 +351,10 @@ public class ToolSpawner : MonoBehaviour
     }
   }
 
+  // - NAVIGATION UTILITIES
   int GetMaxIndexForCurrentTab()
   {
+    // Return maximum index for current tab
     switch (currentTab)
     {
       case 0: return toolNames.Length - 1;
@@ -345,73 +364,78 @@ public class ToolSpawner : MonoBehaviour
     }
   }
 
+  // - ACTION EXECUTION
   void ExecuteSelection()
   {
+    // Execute action based on current tab
     switch (currentTab)
     {
-      case 0: // Tools
-        ToggleTool(selectedIndex); // CHANGED: Use ToggleTool instead of SpawnTool
+      case 0:
+        ToggleTool(selectedIndex);
         break;
-      case 1: // Generate
+      case 1:
         ExecuteGenerate(selectedIndex);
         break;
-      case 2: // Game
+      case 2:
         ExecuteGameAction(selectedIndex);
         break;
     }
   }
 
-  // CHANGED: Replace SpawnTool with ToggleTool
+  // - TOOL MANAGEMENT ACTIONS
   void ToggleTool(int toolIndex)
   {
-    if (toolIndex >= toolQuantities.Length || toolQuantities[toolIndex] <= 0) return;
+    // Check basic availability
     if (toolIndex >= existingTools.Length || existingTools[toolIndex] == null) return;
 
-    // Toggle tool state
-    if (toolsActive.ContainsKey(toolIndex) && toolsActive[toolIndex])
+    bool isCurrentlyActive = toolsActive.ContainsKey(toolIndex) && toolsActive[toolIndex];
+
+    // Toggle tool between active and storage
+    if (isCurrentlyActive)
     {
-      // Tool is active, move it back to storage
+      // Store the tool
       MoveToolToStorage(toolIndex);
     }
     else
     {
-      // Tool is not active, move it to player
+      // Spawn the tool - no quantity restrictions or consumption
       MoveToolToPlayer(toolIndex);
-
-      // Reduce quantity for consumable tools (Brush)
-      if (toolIndex == 2) toolQuantities[toolIndex]--;
     }
 
     PlayAudio(1);
   }
 
+  // - SCENE GENERATION ACTIONS
   void ExecuteGenerate(int generateIndex)
   {
+    // Generate random crime scene
     if (sceneGenerator == null) return;
 
-    // Only one option: Generate Random Scene
     sceneGenerator.GenerateRandomLocation();
     PlayAudio(2);
   }
 
+  // - GAME CONTROL ACTIONS
   void ExecuteGameAction(int actionIndex)
   {
+    // Execute game control functions
     switch (actionIndex)
     {
-      case 0: UnityEngine.SceneManagement.SceneManager.LoadScene(0); break; // Quit
-      case 1: Time.timeScale = 0f; break; // Pause
-      case 2: Time.timeScale = 1f; break; // Resume
+      case 0: UnityEngine.SceneManagement.SceneManager.LoadScene(0); break;
+      case 1: Time.timeScale = 0f; break;
+      case 2: Time.timeScale = 1f; break;
     }
 
     PlayAudio(0);
   }
 
+  // - UI VISIBILITY CONTROL
   void ToggleUI()
   {
+    // Toggle UI visibility and VR control state
     isUIVisible = !isUIVisible;
     uiInstance.SetActive(isUIVisible);
 
-    // Reset VR control state when opening
     if (isUIVisible && useVRControls)
     {
       vrControlActive = true;
@@ -421,7 +445,6 @@ public class ToolSpawner : MonoBehaviour
       vrControlActive = false;
     }
 
-
     if (isUIVisible)
     {
       UpdateUITransform();
@@ -430,14 +453,17 @@ public class ToolSpawner : MonoBehaviour
     PlayAudio(0);
   }
 
+  // - UI UPDATE SYSTEM
   void UpdateUI()
   {
+    // Update UI transform and content
     UpdateUITransform();
     UpdateUIContent();
   }
 
   void UpdateUITransform()
   {
+    // Position UI relative to attachment point
     if (uiInstance != null && attachPoint != null)
     {
       uiInstance.transform.position = attachPoint.position + attachPoint.TransformDirection(positionOffset);
@@ -446,12 +472,14 @@ public class ToolSpawner : MonoBehaviour
     }
   }
 
+  // - UI CONTENT MANAGEMENT
   void UpdateUIContent()
   {
-    // Update tab colors
+    // Update tab colors and status text
     Transform canvasContainer = uiInstance.transform.Find("Canvas");
     if (canvasContainer != null)
     {
+      // Update tab appearance
       for (int i = 0; i < 3; i++)
       {
         Transform tab = canvasContainer.Find($"TabContainer/Tab{i}");
@@ -478,40 +506,36 @@ public class ToolSpawner : MonoBehaviour
       }
     }
 
-    // Always show all buttons and text, just update visibility and colors
+    // Update button content and colors
     for (int i = 0; i < allButtons.Count; i++)
     {
-      // Always show all buttons
       allButtons[i].SetActive(true);
 
-      // Determine what this button should show based on current tab
       string displayText = "";
       string displayDesc = "";
       bool isCurrentTabButton = false;
 
+      // Determine button content based on current tab
       if (currentTab == 0 && i < toolNames.Length)
       {
-        // Tools tab - show tool names
         displayText = toolNames[i];
         displayDesc = toolDescriptions[i];
         isCurrentTabButton = true;
       }
       else if (currentTab == 1 && i < generateNames.Length)
       {
-        // Generate tab - show generate options
         displayText = generateNames[i];
         displayDesc = generateDescriptions[i];
         isCurrentTabButton = true;
       }
       else if (currentTab == 2 && i < gameNames.Length)
       {
-        // Game tab - show game options
         displayText = gameNames[i];
         displayDesc = gameDescriptions[i];
         isCurrentTabButton = true;
       }
 
-      // Update button text
+      // Update button text content
       if (i < buttonTitles.Count && buttonTitles[i] != null)
       {
         buttonTitles[i].text = displayText;
@@ -524,13 +548,12 @@ public class ToolSpawner : MonoBehaviour
         buttonDescriptions[i].gameObject.SetActive(isCurrentTabButton);
       }
 
-      // Update button colors - CHANGED: Show different colors for active/inactive tools
+      // Update button colors based on state
       Image buttonImage = allButtons[i].GetComponent<Image>();
       if (buttonImage != null)
       {
         if (!isCurrentTabButton)
         {
-          // Hide buttons not relevant to current tab
           buttonImage.color = Color.clear;
         }
         else if (i == selectedIndex)
@@ -539,14 +562,9 @@ public class ToolSpawner : MonoBehaviour
         }
         else if (currentTab == 0 && i < toolQuantities.Length)
         {
-          // Show different colors based on tool state
-          if (toolQuantities[i] <= 0)
+          if (toolsActive.ContainsKey(i) && toolsActive[i])
           {
-            buttonImage.color = unavailableColor;
-          }
-          else if (toolsActive.ContainsKey(i) && toolsActive[i])
-          {
-            buttonImage.color = hoverColor; // Different color for active tools
+            buttonImage.color = hoverColor;
           }
           else
           {
@@ -561,14 +579,15 @@ public class ToolSpawner : MonoBehaviour
     }
   }
 
+  // - ACTION TEXT GENERATION
   string GetCurrentActionText()
   {
+    // Generate context-sensitive action text
     switch (currentTab)
     {
-      case 0: // Tools
+      case 0:
         if (selectedIndex < toolNames.Length)
         {
-          // CHANGED: Show different text based on tool state
           if (toolsActive.ContainsKey(selectedIndex) && toolsActive[selectedIndex])
           {
             return $"Press X to store: {toolNames[selectedIndex]}";
@@ -580,14 +599,14 @@ public class ToolSpawner : MonoBehaviour
         }
         return "Select a tool to toggle";
 
-      case 1: // Generate
+      case 1:
         if (selectedIndex < generateNames.Length)
         {
           return $"Press X to: {generateNames[selectedIndex]}";
         }
         return "Generate a random crime scene";
 
-      case 2: // Game
+      case 2:
         if (selectedIndex < gameNames.Length)
         {
           return $"Press X to: {gameNames[selectedIndex]}";
@@ -599,15 +618,17 @@ public class ToolSpawner : MonoBehaviour
     }
   }
 
+  // - BUTTON VISIBILITY LOGIC
   bool ShouldShowButton(int buttonIndex)
   {
+    // Determine if button should be visible for current tab
     switch (currentTab)
     {
-      case 0: // Tools
+      case 0:
         return buttonIndex < toolNames.Length;
-      case 1: // Generate
+      case 1:
         return buttonIndex >= toolNames.Length && buttonIndex < (toolNames.Length + generateNames.Length);
-      case 2: // Game
+      case 2:
         return buttonIndex >= (toolNames.Length + generateNames.Length);
       default:
         return false;
@@ -616,26 +637,28 @@ public class ToolSpawner : MonoBehaviour
 
   int GetButtonIndexInCurrentTab(int globalButtonIndex)
   {
+    // Convert global button index to tab-specific index
     switch (currentTab)
     {
-      case 0: // Tools
+      case 0:
         return globalButtonIndex;
-      case 1: // Generate
+      case 1:
         return globalButtonIndex - toolNames.Length;
-      case 2: // Game
+      case 2:
         return globalButtonIndex - (toolNames.Length + generateNames.Length);
       default:
         return 0;
     }
   }
 
+  // - UI CREATION SYSTEM
   void CreateUI()
   {
     // Create main UI container
     uiInstance = new GameObject("ToolSpawnerUI");
     uiInstance.transform.position = new Vector3(0, -1000, 0);
 
-    // Setup Canvas
+    // Setup canvas components
     Canvas canvas = uiInstance.AddComponent<Canvas>();
     canvas.renderMode = RenderMode.WorldSpace;
 
@@ -647,44 +670,46 @@ public class ToolSpawner : MonoBehaviour
     RectTransform canvasRect = uiInstance.GetComponent<RectTransform>();
     canvasRect.sizeDelta = new Vector2(500, 400);
 
-    // Create nested Canvas object for proper UI structure
+    // Create canvas container
     GameObject canvasContainer = CreateUIElement("Canvas", uiInstance.transform);
     SetupRectTransform(canvasContainer, Vector2.zero, Vector2.one, Vector2.zero);
 
-    // Create Background
+    // Create background
     GameObject bg = CreateUIElement("Background", canvasContainer.transform);
     SetupRectTransform(bg, Vector2.zero, Vector2.one, Vector2.zero);
     bg.AddComponent<Image>().color = new Color(0.1f, 0.1f, 0.1f, 0.95f);
 
-    // Create Title
+    // Create title text
     GameObject title = CreateUIElement("Title", canvasContainer.transform);
     SetupRectTransform(title, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 60));
     title.GetComponent<RectTransform>().anchoredPosition = new Vector2(0, -30);
-    CreateText(title, "TOOL MANAGER", 28, FontStyles.Bold, Color.white); // CHANGED: Updated title
+    CreateText(title, "TOOL MANAGER", 28, FontStyles.Bold, Color.white);
 
-    // Create VR Controls hint - UPDATED
+    // Create controls hint
     GameObject hint = CreateUIElement("ControlsHint", canvasContainer.transform);
     SetupRectTransform(hint, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 30));
     hint.GetComponent<RectTransform>().anchoredPosition = new Vector2(0, -90);
     CreateText(hint, "VR: Y=Menu | X=Select | Left Stick=Navigate", 12, FontStyles.Italic, new Color(0.8f, 0.8f, 0.8f));
 
-    // Create Action Status text (shows what you're about to do)
+    // Create action status display
     GameObject actionStatus = CreateUIElement("ActionStatus", canvasContainer.transform);
     SetupRectTransform(actionStatus, new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 60));
     actionStatus.GetComponent<RectTransform>().anchoredPosition = new Vector2(0, 30);
     TextMeshProUGUI statusText = CreateText(actionStatus, "Select an option above", 16, FontStyles.Bold, Color.yellow);
     statusText.alignment = TextAlignmentOptions.Center;
 
-    // Create Tabs
+    // Create tab container
     GameObject tabContainer = CreateUIElement("TabContainer", canvasContainer.transform);
     SetupRectTransform(tabContainer, new Vector2(0, 1), new Vector2(1, 1), new Vector2(-20, 50));
     tabContainer.GetComponent<RectTransform>().anchoredPosition = new Vector2(0, -140);
 
+    // Setup tab layout
     HorizontalLayoutGroup tabLayout = tabContainer.AddComponent<HorizontalLayoutGroup>();
     tabLayout.childForceExpandWidth = true;
     tabLayout.childForceExpandHeight = true;
     tabLayout.spacing = 5;
 
+    // Create individual tabs
     string[] tabNames = { "TOOLS", "GENERATE", "GAME" };
     for (int i = 0; i < 3; i++)
     {
@@ -692,7 +717,6 @@ public class ToolSpawner : MonoBehaviour
       Image tabImage = tab.AddComponent<Image>();
       tabImage.color = Color.gray;
 
-      // Create text for tab
       GameObject tabText = CreateUIElement("Text", tab.transform);
       SetupRectTransform(tabText, Vector2.zero, Vector2.one, Vector2.zero);
       CreateText(tabText, tabNames[i], 16, FontStyles.Bold, Color.white);
@@ -707,32 +731,33 @@ public class ToolSpawner : MonoBehaviour
       });
     }
 
-    // Create Content Area with ScrollRect
+    // Create content area with scrolling
     GameObject contentArea = CreateUIElement("ContentArea", canvasContainer.transform);
     SetupRectTransform(contentArea, new Vector2(0, 0), new Vector2(1, 1), new Vector2(-20, -200));
     contentArea.GetComponent<RectTransform>().anchoredPosition = new Vector2(0, -15);
 
+    // Setup scroll rect
     ScrollRect scrollRect = contentArea.AddComponent<ScrollRect>();
     scrollRect.horizontal = false;
     scrollRect.vertical = true;
     scrollRect.scrollSensitivity = 20;
 
-    // Create viewport
+    // Create viewport for scrolling
     GameObject viewport = CreateUIElement("Viewport", contentArea.transform);
     SetupRectTransform(viewport, Vector2.zero, Vector2.one, Vector2.zero);
     viewport.AddComponent<Image>().color = Color.clear;
     viewport.AddComponent<Mask>().showMaskGraphic = false;
 
-    // Create content container
+    // Create scrollable content container
     GameObject content = CreateUIElement("Content", viewport.transform);
     SetupRectTransform(content, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 0));
     content.GetComponent<RectTransform>().anchoredPosition = Vector2.zero;
 
-    // Setup scroll rect references
+    // Connect scroll rect references
     scrollRect.viewport = viewport.GetComponent<RectTransform>();
     scrollRect.content = content.GetComponent<RectTransform>();
 
-    // Add ContentSizeFitter and VerticalLayoutGroup to content
+    // Setup content sizing and layout
     ContentSizeFitter sizeFitter = content.AddComponent<ContentSizeFitter>();
     sizeFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
@@ -743,25 +768,25 @@ public class ToolSpawner : MonoBehaviour
     contentLayout.childForceExpandHeight = false;
     contentLayout.childControlHeight = false;
 
-    // Create buttons for all tabs
+    // Create button content
     CreateContentButtons(content);
 
     uiInstance.SetActive(false);
   }
 
+  // - BUTTON CREATION
   void CreateContentButtons(GameObject parent)
   {
-    // Clear existing lists
+    // Clear existing button references
     allButtons.Clear();
     buttonTitles.Clear();
     buttonDescriptions.Clear();
 
-    // Create enough buttons for the largest category (tools = 4 buttons)
+    // Create buttons for all tabs
     int maxButtons = Mathf.Max(toolNames.Length, generateNames.Length, gameNames.Length);
 
     for (int i = 0; i < maxButtons; i++)
     {
-      // Create a generic button - text will be set dynamically
       GameObject button = CreateContentButton(parent, "Button", "Description");
 
       int buttonIndex = i;
@@ -776,26 +801,29 @@ public class ToolSpawner : MonoBehaviour
 
   GameObject CreateContentButton(GameObject parent, string name, string description)
   {
+    // Create button container
     GameObject button = CreateUIElement($"Button_{allButtons.Count}", parent.transform);
 
-    // Set fixed height for consistent button sizing
+    // Setup button layout
     LayoutElement layoutElement = button.AddComponent<LayoutElement>();
     layoutElement.preferredHeight = 100;
     layoutElement.flexibleHeight = 0;
 
+    // Create button image and component
     Image buttonImage = button.AddComponent<Image>();
     buttonImage.color = availableColor;
 
     Button buttonComp = button.AddComponent<Button>();
     buttonComp.targetGraphic = buttonImage;
 
+    // Setup button color states
     ColorBlock colors = buttonComp.colors;
     colors.highlightedColor = hoverColor;
     colors.pressedColor = selectedColor;
     colors.normalColor = availableColor;
     buttonComp.colors = colors;
 
-    // Create title text - ALWAYS VISIBLE, big and bold
+    // Create title text element
     GameObject titleObj = CreateUIElement("Title", button.transform);
     RectTransform titleRect = titleObj.GetComponent<RectTransform>();
     titleRect.anchorMin = new Vector2(0, 0.5f);
@@ -805,7 +833,7 @@ public class ToolSpawner : MonoBehaviour
 
     TextMeshProUGUI titleText = titleObj.AddComponent<TextMeshProUGUI>();
     titleText.text = name;
-    titleText.fontSize = 24; // Bigger font
+    titleText.fontSize = 24;
     titleText.fontStyle = FontStyles.Bold;
     titleText.color = Color.white;
     titleText.alignment = TextAlignmentOptions.Center;
@@ -813,12 +841,10 @@ public class ToolSpawner : MonoBehaviour
     titleText.enableWordWrapping = false;
     titleText.overflowMode = TextOverflowModes.Overflow;
 
-    // Force text to render immediately
     titleText.ForceMeshUpdate();
-
     buttonTitles.Add(titleText);
 
-    // Create description text - ALWAYS VISIBLE, smaller
+    // Create description text element
     GameObject descObj = CreateUIElement("Description", button.transform);
     RectTransform descRect = descObj.GetComponent<RectTransform>();
     descRect.anchorMin = new Vector2(0, 0);
@@ -828,7 +854,7 @@ public class ToolSpawner : MonoBehaviour
 
     TextMeshProUGUI descText = descObj.AddComponent<TextMeshProUGUI>();
     descText.text = description;
-    descText.fontSize = 14; // Bigger font
+    descText.fontSize = 14;
     descText.fontStyle = FontStyles.Normal;
     descText.color = new Color(0.9f, 0.9f, 0.9f);
     descText.alignment = TextAlignmentOptions.Center;
@@ -836,16 +862,16 @@ public class ToolSpawner : MonoBehaviour
     descText.enableWordWrapping = true;
     descText.overflowMode = TextOverflowModes.Ellipsis;
 
-    // Force text to render immediately
     descText.ForceMeshUpdate();
-
     buttonDescriptions.Add(descText);
 
     return button;
   }
 
+  // - UI UTILITY FUNCTIONS
   GameObject CreateUIElement(string name, Transform parent)
   {
+    // Create basic UI game object with RectTransform
     GameObject obj = new GameObject(name);
     obj.transform.SetParent(parent, false);
     obj.AddComponent<RectTransform>();
@@ -854,6 +880,7 @@ public class ToolSpawner : MonoBehaviour
 
   void SetupRectTransform(GameObject obj, Vector2 anchorMin, Vector2 anchorMax, Vector2 sizeDelta)
   {
+    // Configure RectTransform anchors and size
     RectTransform rt = obj.GetComponent<RectTransform>();
     rt.anchorMin = anchorMin;
     rt.anchorMax = anchorMax;
@@ -862,6 +889,7 @@ public class ToolSpawner : MonoBehaviour
 
   TextMeshProUGUI CreateText(GameObject parent, string text, int fontSize, FontStyles fontStyle, Color color)
   {
+    // Create and configure TextMeshPro component
     TextMeshProUGUI textComp = parent.AddComponent<TextMeshProUGUI>();
     textComp.text = text;
     textComp.fontSize = fontSize;
@@ -875,48 +903,42 @@ public class ToolSpawner : MonoBehaviour
     return textComp;
   }
 
+  // - AUDIO SYSTEM
   void PlayAudio(int clipIndex)
   {
+    // Play audio clip if available
     if (audioSource != null && clipIndex < audioClips.Length && audioClips[clipIndex] != null)
     {
       audioSource.PlayOneShot(audioClips[clipIndex]);
     }
   }
 
+  // - CLEANUP
   void OnDestroy()
   {
+    // Clear singleton reference
     if (instance == this) instance = null;
   }
 
-  // PUBLIC API METHODS for cross-script communication
-
-  /// <summary>
-  /// Check if this ToolSpawner is currently using VR controls
-  /// </summary>
+  // - PUBLIC API METHODS
+  // VR control state checking
   public bool IsUsingVRControls()
   {
     return useVRControls && vrControlActive;
   }
 
-  /// <summary>
-  /// Temporarily disable VR controls (called by EvidenceChecklist)
-  /// </summary>
+  // VR control management for external scripts
   public void DisableVRControls()
   {
     // Both can be active simultaneously
   }
 
-  /// <summary>
-  /// Re-enable VR controls (called by EvidenceChecklist)
-  /// </summary>
   public void EnableVRControls()
   {
     // Both can be active simultaneously
   }
 
-  /// <summary>
-  /// Force close the UI (called by other scripts)
-  /// </summary>
+  // UI visibility control
   public void ForceCloseUI()
   {
     if (isUIVisible)
@@ -925,27 +947,16 @@ public class ToolSpawner : MonoBehaviour
     }
   }
 
-  /// <summary>
-  /// Check if the UI is currently visible
-  /// </summary>
+  // UI state properties
   public bool IsUIVisible => isUIVisible;
-
-  /// <summary>
-  /// Check if VR controls are currently active
-  /// </summary>
   public bool IsVRControlActive => vrControlActive;
 
-  /// <summary>
-  /// Get the current tool quantities for external scripts
-  /// </summary>
+  // Tool quantity management
   public int[] GetToolQuantities()
   {
     return (int[])toolQuantities.Clone();
   }
 
-  /// <summary>
-  /// Set tool quantity for a specific tool (for external scripts)
-  /// </summary>
   public void SetToolQuantity(int toolIndex, int quantity)
   {
     if (toolIndex >= 0 && toolIndex < toolQuantities.Length)
@@ -954,11 +965,8 @@ public class ToolSpawner : MonoBehaviour
     }
   }
 
-  // NEW: Additional public methods for managing existing tools
-
-  /// <summary>
-  /// Manually assign an existing tool to a specific index
-  /// </summary>
+  // - TOOL MANAGEMENT API
+  // External tool assignment
   public void AssignExistingTool(int toolIndex, GameObject tool)
   {
     if (toolIndex >= 0 && toolIndex < existingTools.Length && tool != null)
@@ -967,7 +975,6 @@ public class ToolSpawner : MonoBehaviour
       originalToolPositions[toolIndex] = tool.transform.position;
       toolsActive[toolIndex] = tool.activeInHierarchy;
 
-      // If tool is currently active, move it to storage
       if (tool.activeInHierarchy)
       {
         MoveToolToStorage(toolIndex);
@@ -975,17 +982,13 @@ public class ToolSpawner : MonoBehaviour
     }
   }
 
-  /// <summary>
-  /// Check if a specific tool is currently active
-  /// </summary>
+  // Tool state checking
   public bool IsToolActive(int toolIndex)
   {
     return toolsActive.ContainsKey(toolIndex) && toolsActive[toolIndex];
   }
 
-  /// <summary>
-  /// Force store all active tools
-  /// </summary>
+  // Bulk tool management
   public void StoreAllTools()
   {
     for (int i = 0; i < existingTools.Length; i++)
@@ -997,9 +1000,7 @@ public class ToolSpawner : MonoBehaviour
     }
   }
 
-  /// <summary>
-  /// Get reference to a specific existing tool
-  /// </summary>
+  // Tool reference access
   public GameObject GetExistingTool(int toolIndex)
   {
     if (toolIndex >= 0 && toolIndex < existingTools.Length)

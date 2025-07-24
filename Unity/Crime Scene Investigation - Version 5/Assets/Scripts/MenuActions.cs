@@ -2,12 +2,9 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using System.Collections;
 
-/// <summary>
-/// Handles main menu actions with VR-safe scene transitions
-/// This replaces your original MenuButtons.cs content
-/// </summary>
 public class MenuActions : MonoBehaviour
 {
+  // - SERIALIZED FIELD DECLARATIONS
   [Header("Scene Transition Settings")]
   [SerializeField] private float transitionDelay = 0.5f;
   [SerializeField] private string investigationSceneName = "Roling";
@@ -21,20 +18,22 @@ public class MenuActions : MonoBehaviour
   [SerializeField] private AudioClip buttonClickSound;
   [SerializeField] private AudioClip transitionSound;
 
+  // - PRIVATE STATE VARIABLES
+  // Transition state tracking
   private bool isTransitioning = false;
 
+  // - INITIALIZATION
   void Start()
   {
-    // Setup audio if not assigned
+    // Setup audio component if not assigned
     if (audioSource == null)
     {
       audioSource = GetComponent<AudioSource>();
     }
   }
 
-  /// <summary>
-  /// Starts the investigation scene with VR-safe transition
-  /// </summary>
+  // - PUBLIC MENU ACTION METHODS
+  // Start investigation scene with VR-safe transition
   public void StartInvestigation()
   {
     if (isTransitioning)
@@ -46,9 +45,7 @@ public class MenuActions : MonoBehaviour
     StartCoroutine(SafeSceneTransition(investigationSceneName));
   }
 
-  /// <summary>
-  /// Quits the application with VR-safe cleanup
-  /// </summary>
+  // Quit application with VR-safe cleanup
   public void QuitApplication()
   {
     if (isTransitioning)
@@ -60,42 +57,35 @@ public class MenuActions : MonoBehaviour
     StartCoroutine(SafeApplicationQuit());
   }
 
-  /// <summary>
-  /// Safe scene transition that properly handles VR cleanup
-  /// </summary>
+  // Set investigation scene name programmatically
+  public void SetInvestigationSceneName(string sceneName)
+  {
+    investigationSceneName = sceneName;
+  }
+
+  // - SCENE TRANSITION SYSTEM
+  // Safe scene transition with VR cleanup
   private IEnumerator SafeSceneTransition(string sceneName)
   {
     isTransitioning = true;
 
-    // Play transition sound
+    // Play transition audio
     PlayTransitionSound();
 
-    // Step 1: Disable VR input systems if VR cleanup is enabled
+    // Perform VR cleanup if enabled
     if (enableVRCleanup)
     {
-      DisableVRInputSystems();
-
-      // Step 2: Wait for VR systems to process the disable
-      yield return new WaitForEndOfFrame();
-      yield return new WaitForSeconds(vrCleanupDelay);
-
-      // Step 3: Clean up any remaining VR references
-      CleanupVRReferences();
-
-      // Step 4: Wait for cleanup to complete
-      yield return new WaitForEndOfFrame();
+      yield return StartCoroutine(PerformVRCleanup());
     }
 
-    // Step 5: Standard transition delay
+    // Standard transition delay
     yield return new WaitForSeconds(transitionDelay);
 
-    // Step 6: Load the new scene with error handling
+    // Load scene with error handling
     LoadSceneWithFallback(sceneName);
   }
 
-  /// <summary>
-  /// Load scene with error handling (separated from coroutine)
-  /// </summary>
+  // Load scene with fallback error handling
   private void LoadSceneWithFallback(string sceneName)
   {
     try
@@ -104,14 +94,12 @@ public class MenuActions : MonoBehaviour
     }
     catch (System.Exception e)
     {
-      // Fallback: try direct scene load
+      // Attempt fallback scene load
       StartCoroutine(FallbackSceneLoad(sceneName));
     }
   }
 
-  /// <summary>
-  /// Fallback scene loading coroutine
-  /// </summary>
+  // Fallback scene loading coroutine
   private IEnumerator FallbackSceneLoad(string sceneName)
   {
     yield return new WaitForSeconds(0.1f);
@@ -126,87 +114,68 @@ public class MenuActions : MonoBehaviour
     }
   }
 
-  /// <summary>
-  /// Safe application quit that handles VR cleanup
-  /// </summary>
+  // - APPLICATION QUIT SYSTEM
+  // Safe application quit with VR cleanup
   private IEnumerator SafeApplicationQuit()
   {
     isTransitioning = true;
 
-    // Step 1: Disable VR systems if cleanup is enabled
+    // Perform VR cleanup if enabled
     if (enableVRCleanup)
     {
-      DisableVRInputSystems();
-
-      // Step 2: Wait for cleanup
-      yield return new WaitForEndOfFrame();
-      yield return new WaitForSeconds(vrCleanupDelay);
-
-      // Step 3: Clean up VR references
-      CleanupVRReferences();
-
-      // Step 4: Final wait
-      yield return new WaitForEndOfFrame();
+      yield return StartCoroutine(PerformVRCleanup());
     }
 
-    // Step 5: Standard quit delay
+    // Standard quit delay
     yield return new WaitForSeconds(transitionDelay);
 
-    // Step 6: Quit application with error handling
+    // Quit with error handling
     QuitApplicationWithFallback();
   }
 
-  /// <summary>
-  /// Quit application with error handling (separated from coroutine)
-  /// </summary>
+  // Quit application with fallback handling
   private void QuitApplicationWithFallback()
   {
     try
     {
       Application.Quit();
 
-      // For editor testing
 #if UNITY_EDITOR
       UnityEditor.EditorApplication.isPlaying = false;
 #endif
     }
     catch (System.Exception e)
     {
-      // Fallback quit
+      // Fallback quit attempt
       Application.Quit();
     }
   }
 
-  /// <summary>
-  /// Disable VR input systems to prevent updates during transition
-  /// </summary>
+  // - VR CLEANUP SYSTEM
+  // Perform VR system cleanup
+  private IEnumerator PerformVRCleanup()
+  {
+    // Disable VR input systems
+    DisableVRInputSystems();
+
+    // Wait for VR systems to process disable
+    yield return new WaitForEndOfFrame();
+    yield return new WaitForSeconds(vrCleanupDelay);
+
+    // Clean up VR references
+    CleanupVRReferences();
+
+    // Final cleanup wait
+    yield return new WaitForEndOfFrame();
+  }
+
+  // Disable VR input systems to prevent updates during transition
   private void DisableVRInputSystems()
   {
     try
     {
-      // Disable OVR Manager if present
-      OVRManager ovrManager = FindObjectOfType<OVRManager>();
-      if (ovrManager != null)
-      {
-        ovrManager.enabled = false;
-      }
-
-      // Disable OVR Camera Rig if present
-      OVRCameraRig cameraRig = FindObjectOfType<OVRCameraRig>();
-      if (cameraRig != null)
-      {
-        cameraRig.enabled = false;
-      }
-
-      // Disable controller helpers
-      OVRControllerHelper[] controllerHelpers = FindObjectsOfType<OVRControllerHelper>();
-      foreach (OVRControllerHelper helper in controllerHelpers)
-      {
-        if (helper != null)
-        {
-          helper.enabled = false;
-        }
-      }
+      // Disable OVR components
+      DisableOVRComponents();
 
       // Disable XR interaction systems
       DisableXRInteractionSystems();
@@ -216,18 +185,44 @@ public class MenuActions : MonoBehaviour
     }
     catch (System.Exception e)
     {
-      // Silent error handling
+      // Silent error handling for VR cleanup
     }
   }
 
-  /// <summary>
-  /// Disable XR Interaction Toolkit components
-  /// </summary>
+  // Disable OVR-specific components
+  private void DisableOVRComponents()
+  {
+    // Disable OVR Manager
+    OVRManager ovrManager = FindObjectOfType<OVRManager>();
+    if (ovrManager != null)
+    {
+      ovrManager.enabled = false;
+    }
+
+    // Disable OVR Camera Rig
+    OVRCameraRig cameraRig = FindObjectOfType<OVRCameraRig>();
+    if (cameraRig != null)
+    {
+      cameraRig.enabled = false;
+    }
+
+    // Disable controller helpers
+    OVRControllerHelper[] controllerHelpers = FindObjectsOfType<OVRControllerHelper>();
+    foreach (OVRControllerHelper helper in controllerHelpers)
+    {
+      if (helper != null)
+      {
+        helper.enabled = false;
+      }
+    }
+  }
+
+  // Disable XR Interaction Toolkit components
   private void DisableXRInteractionSystems()
   {
     try
     {
-      // Find and disable XR Interaction Manager
+      // Disable XR Interaction Manager
       var interactionManager = FindObjectOfType<UnityEngine.XR.Interaction.Toolkit.XRInteractionManager>();
       if (interactionManager != null)
       {
@@ -260,42 +255,26 @@ public class MenuActions : MonoBehaviour
     }
   }
 
-  /// <summary>
-  /// Disable custom VR scripts that might cause issues
-  /// </summary>
+  // Disable custom VR scripts that might cause issues
   private void DisableCustomVRScripts()
   {
     try
     {
-      // Disable TeleportSystem
+      // Disable specific custom VR components
       TeleportSystem teleportSystem = FindObjectOfType<TeleportSystem>();
       if (teleportSystem != null)
       {
         teleportSystem.enabled = false;
       }
 
-      // Disable ToolSpawner
       ToolSpawner toolSpawner = FindObjectOfType<ToolSpawner>();
       if (toolSpawner != null)
       {
         toolSpawner.enabled = false;
       }
 
-      // Disable any other VR-related scripts
-      MonoBehaviour[] allScripts = FindObjectsOfType<MonoBehaviour>();
-      foreach (MonoBehaviour script in allScripts)
-      {
-        if (script != null && script != this)
-        {
-          // Check if the script name contains VR-related keywords
-          string scriptName = script.GetType().Name.ToLower();
-          if (scriptName.Contains("vr") || scriptName.Contains("ovr") ||
-              scriptName.Contains("oculus") || scriptName.Contains("controller"))
-          {
-            script.enabled = false;
-          }
-        }
-      }
+      // Disable VR-related scripts by name pattern
+      DisableVRScriptsByPattern();
     }
     catch (System.Exception e)
     {
@@ -303,18 +282,35 @@ public class MenuActions : MonoBehaviour
     }
   }
 
-  /// <summary>
-  /// Clean up VR object references
-  /// </summary>
+  // Disable scripts with VR-related names
+  private void DisableVRScriptsByPattern()
+  {
+    MonoBehaviour[] allScripts = FindObjectsOfType<MonoBehaviour>();
+    foreach (MonoBehaviour script in allScripts)
+    {
+      if (script != null && script != this)
+      {
+        // Check for VR-related keywords in script name
+        string scriptName = script.GetType().Name.ToLower();
+        if (scriptName.Contains("vr") || scriptName.Contains("ovr") ||
+            scriptName.Contains("oculus") || scriptName.Contains("controller"))
+        {
+          script.enabled = false;
+        }
+      }
+    }
+  }
+
+  // Clean up VR object references
   private void CleanupVRReferences()
   {
     try
     {
-      // Force garbage collection to clean up references
+      // Force garbage collection
       System.GC.Collect();
       System.GC.WaitForPendingFinalizers();
 
-      // Clear any static references if your scripts use them
+      // Clear static references
       ClearStaticReferences();
     }
     catch (System.Exception e)
@@ -323,14 +319,12 @@ public class MenuActions : MonoBehaviour
     }
   }
 
-  /// <summary>
-  /// Clear static references that might hold onto destroyed objects
-  /// </summary>
+  // Clear static references that might hold destroyed objects
   private void ClearStaticReferences()
   {
     try
     {
-      // Clear EvidenceChecklist singleton
+      // Clear EvidenceChecklist singleton reference
       var evidenceChecklistInstance = typeof(EvidenceChecklist).GetField("instance",
           System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
       if (evidenceChecklistInstance != null)
@@ -338,7 +332,7 @@ public class MenuActions : MonoBehaviour
         evidenceChecklistInstance.SetValue(null, null);
       }
 
-      // Clear ToolSpawner singleton
+      // Clear ToolSpawner singleton reference
       var toolSpawnerInstance = typeof(ToolSpawner).GetField("instance",
           System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
       if (toolSpawnerInstance != null)
@@ -352,9 +346,8 @@ public class MenuActions : MonoBehaviour
     }
   }
 
-  /// <summary>
-  /// Play button click sound
-  /// </summary>
+  // - AUDIO SYSTEM
+  // Play button click sound effect
   private void PlayButtonSound()
   {
     if (audioSource != null && buttonClickSound != null)
@@ -363,9 +356,7 @@ public class MenuActions : MonoBehaviour
     }
   }
 
-  /// <summary>
-  /// Play transition sound
-  /// </summary>
+  // Play transition sound effect
   private void PlayTransitionSound()
   {
     if (audioSource != null && transitionSound != null)
@@ -374,36 +365,27 @@ public class MenuActions : MonoBehaviour
     }
   }
 
-  /// <summary>
-  /// Public method to change investigation scene name
-  /// </summary>
-  public void SetInvestigationSceneName(string sceneName)
-  {
-    investigationSceneName = sceneName;
-  }
-
-  /// <summary>
-  /// Public method to trigger VR cleanup manually
-  /// </summary>
+  // - MANUAL VR CLEANUP
+  // Manually trigger VR cleanup for testing
   [ContextMenu("Manual VR Cleanup")]
   public void ManualVRCleanup()
   {
     if (!isTransitioning)
     {
-      StartCoroutine(PerformManualVRCleanup());
+      StartCoroutine(PerformManualVRCleanupCoroutine());
     }
   }
 
-  private IEnumerator PerformManualVRCleanup()
+  // Manual VR cleanup coroutine
+  private IEnumerator PerformManualVRCleanupCoroutine()
   {
-    DisableVRInputSystems();
-    yield return new WaitForSeconds(vrCleanupDelay);
-    CleanupVRReferences();
+    yield return StartCoroutine(PerformVRCleanup());
   }
 
-  // Lifecycle methods
+  // - CLEANUP
   void OnDestroy()
   {
+    // Stop all running coroutines
     StopAllCoroutines();
   }
 }
