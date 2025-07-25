@@ -16,13 +16,11 @@ public enum SpawnLocation
 public class CrimeSceneGenerator : MonoBehaviour
 {
   // - INSPECTOR CONFIGURATION
-  [Header("LOCATION SELECTION")]
-  public bool enableLocationSelection = true;
-  public bool useRandomSelection = true;
-  [Space(5)]
-  [Header("Manual Location Selection (when useRandomSelection = false)")]
-  public int forceLocationIndex = 0;
-  [Space(5)]
+  [Header("RANDOM SEED SETTINGS")]
+  public bool useCustomSeed = false;
+  public int customSeed = 12345;
+  [Space(10)]
+
   [Header("Location Probabilities")]
   [Range(0f, 1f)]
   public float barProbability = 0.33f;
@@ -274,10 +272,6 @@ public class CrimeSceneGenerator : MonoBehaviour
   public bool autoFindCameraScript = true;
   public bool notifyCameraOnGeneration = true;
 
-  [Header("Scenario Presets")]
-  public bool useScenarioPresets = false;
-  public int selectedScenarioIndex = 0;
-
   // - STATE VARIABLES
   // Scene object tracking
   private List<GameObject> spawnedObjects = new List<GameObject>();
@@ -294,30 +288,10 @@ public class CrimeSceneGenerator : MonoBehaviour
   private List<GameObject> currentSceneEvidenceObjects = new List<GameObject>();
   private int lastGenerationFrame = -1;
 
-  // Predefined scenarios
-  private int[][] scenarioPresets = new int[][]
-  {
-        new int[] {0, 1, 4},
-        new int[] {2, 4, 6},
-        new int[] {0, 5, 6},
-        new int[] {1, 2, 3, 4},
-        new int[] {4, 5, 6},
-  };
-
-  private string[] scenarioNames = new string[]
-  {
-        "Break-in Gone Wrong",
-        "Violent Confrontation",
-        "Burglary Evidence",
-        "Party Incident",
-        "Assault Scene"
-  };
-
   // - UNITY LIFECYCLE METHODS
   void Start()
   {
-    if (randomizer == null)
-      randomizer = new System.Random();
+    InitializeRandomizer();
 
     CleanAllArrays();
     ValidateArrayLengths();
@@ -352,6 +326,50 @@ public class CrimeSceneGenerator : MonoBehaviour
     StopAutoGeneration();
   }
 
+  // - RANDOMIZER INITIALIZATION
+  private void InitializeRandomizer()
+  {
+    if (useCustomSeed)
+    {
+      randomizer = new System.Random(customSeed);
+      Debug.Log($"CrimeSceneGenerator initialized with custom seed: {customSeed}");
+    }
+    else
+    {
+      randomizer = new System.Random();
+      Debug.Log("CrimeSceneGenerator initialized with random seed");
+    }
+  }
+
+  // - PUBLIC SEED METHODS
+  [ContextMenu("Set New Random Seed")]
+  public void SetNewRandomSeed()
+  {
+    customSeed = System.Environment.TickCount;
+    useCustomSeed = true;
+    InitializeRandomizer();
+    Debug.Log($"New random seed set: {customSeed}");
+  }
+
+  public void SetSeed(int seed)
+  {
+    customSeed = seed;
+    useCustomSeed = true;
+    InitializeRandomizer();
+    Debug.Log($"Custom seed set to: {seed}");
+  }
+
+  public int GetCurrentSeed()
+  {
+    return useCustomSeed ? customSeed : -1;
+  }
+
+  public void RegenerateWithNewSeed()
+  {
+    SetNewRandomSeed();
+    GenerateScene();
+  }
+
   // - PROBABILITY NORMALIZATION
   void NormalizeProbabilities()
   {
@@ -374,78 +392,54 @@ public class CrimeSceneGenerator : MonoBehaviour
   [ContextMenu("Generate Random Location")]
   public void GenerateRandomLocation()
   {
-    useRandomSelection = true;
     GenerateScene();
   }
 
   [ContextMenu("Generate Bar Scene")]
   public void GenerateBarScene()
   {
-    useRandomSelection = false;
-    forceLocationIndex = 0;
+    currentLocation = CurrentLocation.Bar;
+    isLocationDecided = true;
     GenerateScene();
   }
 
   [ContextMenu("Generate Office Scene")]
   public void GenerateOfficeScene()
   {
-    useRandomSelection = false;
-    forceLocationIndex = 1;
+    currentLocation = CurrentLocation.Office;
+    isLocationDecided = true;
     GenerateScene();
   }
 
   [ContextMenu("Generate Home Scene")]
   public void GenerateHomeScene()
   {
-    useRandomSelection = false;
-    forceLocationIndex = 2;
+    currentLocation = CurrentLocation.Home;
+    isLocationDecided = true;
     GenerateScene();
   }
 
   // - SCENE LOCATION DECISION
   private void DecideSceneLocation()
   {
-    if (!enableLocationSelection)
+    if (isLocationDecided)
     {
-      currentLocation = CurrentLocation.Fallback;
-      isLocationDecided = true;
-      return;
+      return; // Location already decided (from context menu methods)
     }
 
-    if (useRandomSelection)
-    {
-      float randomValue = (float)randomizer.NextDouble();
+    float randomValue = (float)randomizer.NextDouble();
 
-      if (randomValue < barProbability)
-      {
-        currentLocation = CurrentLocation.Bar;
-      }
-      else if (randomValue < barProbability + officeProbability)
-      {
-        currentLocation = CurrentLocation.Office;
-      }
-      else
-      {
-        currentLocation = CurrentLocation.Home;
-      }
+    if (randomValue < barProbability)
+    {
+      currentLocation = CurrentLocation.Bar;
+    }
+    else if (randomValue < barProbability + officeProbability)
+    {
+      currentLocation = CurrentLocation.Office;
     }
     else
     {
-      switch (forceLocationIndex)
-      {
-        case 0:
-          currentLocation = CurrentLocation.Bar;
-          break;
-        case 1:
-          currentLocation = CurrentLocation.Office;
-          break;
-        case 2:
-          currentLocation = CurrentLocation.Home;
-          break;
-        default:
-          currentLocation = CurrentLocation.Fallback;
-          break;
-      }
+      currentLocation = CurrentLocation.Home;
     }
 
     isLocationDecided = true;
@@ -454,7 +448,7 @@ public class CrimeSceneGenerator : MonoBehaviour
   // - LOCATION-SPECIFIC OBJECT HANDLING
   private void HandleLocationSpecificObjects()
   {
-    if (!enableLocationSelection || !isLocationDecided)
+    if (!isLocationDecided)
     {
       HideAllLocationSpecificObjects();
       ShowHideFallbackTables();
@@ -513,15 +507,13 @@ public class CrimeSceneGenerator : MonoBehaviour
     HideSimpleObjects(homeExistingFurniture);
     HideSimpleObjects(homeFurnitureObjects);
 
-    if (enableLocationSelection)
-    {
-      HideLocationObjects(table1Object, table1LinkedObjects);
-      HideLocationObjects(table2Object, table2LinkedObjects);
-      HideLocationObjects(table3Object, table3LinkedObjects);
-      HideSimpleObjects(tableLikeObjects);
-      HideSimpleObjects(existingFurniture);
-      HideSimpleObjects(furnitureObjects);
-    }
+    // Always hide fallback objects since we're using location-specific scenes
+    HideLocationObjects(table1Object, table1LinkedObjects);
+    HideLocationObjects(table2Object, table2LinkedObjects);
+    HideLocationObjects(table3Object, table3LinkedObjects);
+    HideSimpleObjects(tableLikeObjects);
+    HideSimpleObjects(existingFurniture);
+    HideSimpleObjects(furnitureObjects);
   }
 
   // - OBJECT HIDING HELPERS
@@ -672,7 +664,7 @@ public class CrimeSceneGenerator : MonoBehaviour
   {
     List<Transform> validPoints = new List<Transform>();
 
-    if (enableLocationSelection && isLocationDecided && currentLocation != CurrentLocation.Fallback)
+    if (isLocationDecided && currentLocation != CurrentLocation.Fallback)
     {
       Transform[] floorPoints = null;
 
@@ -815,7 +807,7 @@ public class CrimeSceneGenerator : MonoBehaviour
   public void GenerateAgain()
   {
     if (randomizer == null)
-      randomizer = new System.Random();
+      InitializeRandomizer();
     GenerateScene();
   }
 
@@ -823,7 +815,7 @@ public class CrimeSceneGenerator : MonoBehaviour
   public void GenerateScene()
   {
     if (randomizer == null)
-      randomizer = new System.Random();
+      InitializeRandomizer();
 
     // Reset fingerprints from previous scene
     DustBrush dustBrush = FindObjectOfType<DustBrush>();
@@ -834,11 +826,11 @@ public class CrimeSceneGenerator : MonoBehaviour
 
     lastGenerationFrame = Time.frameCount;
 
+    // Reset location decision for fresh random selection
+    isLocationDecided = false;
+
     // Determine scene location
-    if (enableLocationSelection)
-    {
-      DecideSceneLocation();
-    }
+    DecideSceneLocation();
 
     // Clear previous scene objects
     if (clearPreviousScene)
@@ -856,15 +848,8 @@ public class CrimeSceneGenerator : MonoBehaviour
     // Show/hide furniture based on location
     HandleLocationSpecificObjects();
 
-    // Generate evidence using either presets or random selection
-    if (useScenarioPresets && scenarioPresets.Length > 0)
-    {
-      GenerateFromPreset();
-    }
-    else
-    {
-      GenerateRandomScene();
-    }
+    // Generate evidence randomly
+    GenerateRandomScene();
 
     // Notify other systems of scene generation
     if (enableRealTimeNotifications)
@@ -1114,35 +1099,31 @@ public class CrimeSceneGenerator : MonoBehaviour
     return cleanList.ToArray();
   }
 
-  [ContextMenu("Validate Spawn Points Configuration")]
   private void ValidateSpawnPointsConfiguration()
   {
     bool hasIssues = false;
 
-    if (enableLocationSelection)
+    if (currentLocation == CurrentLocation.Bar || !isLocationDecided)
     {
-      if (currentLocation == CurrentLocation.Bar || !isLocationDecided)
+      if (barFloorSpawnPoints == null || barFloorSpawnPoints.Length == 0)
       {
-        if (barFloorSpawnPoints == null || barFloorSpawnPoints.Length == 0)
-        {
-          hasIssues = true;
-        }
+        hasIssues = true;
       }
+    }
 
-      if (currentLocation == CurrentLocation.Office || !isLocationDecided)
+    if (currentLocation == CurrentLocation.Office || !isLocationDecided)
+    {
+      if (officeFloorSpawnPoints == null || officeFloorSpawnPoints.Length == 0)
       {
-        if (officeFloorSpawnPoints == null || officeFloorSpawnPoints.Length == 0)
-        {
-          hasIssues = true;
-        }
+        hasIssues = true;
       }
+    }
 
-      if (currentLocation == CurrentLocation.Home || !isLocationDecided)
+    if (currentLocation == CurrentLocation.Home || !isLocationDecided)
+    {
+      if (homeFloorSpawnPoints == null || homeFloorSpawnPoints.Length == 0)
       {
-        if (homeFloorSpawnPoints == null || homeFloorSpawnPoints.Length == 0)
-        {
-          hasIssues = true;
-        }
+        hasIssues = true;
       }
     }
 
@@ -1168,23 +1149,6 @@ public class CrimeSceneGenerator : MonoBehaviour
     if (notifyChecklistOnGeneration && evidenceChecklist != null)
     {
       evidenceChecklist.OnSceneGenerated();
-    }
-  }
-
-  // - PRESET GENERATION
-  void GenerateFromPreset()
-  {
-    if (selectedScenarioIndex >= scenarioPresets.Length)
-      selectedScenarioIndex = 0;
-
-    int[] preset = scenarioPresets[selectedScenarioIndex];
-
-    foreach (int evidenceIndex in preset)
-    {
-      if (evidenceIndex < evidencePrefabs.Length && evidencePrefabs[evidenceIndex] != null)
-      {
-        SpawnEvidence(evidenceIndex);
-      }
     }
   }
 
@@ -1290,7 +1254,7 @@ public class CrimeSceneGenerator : MonoBehaviour
     List<Transform> validPoints = new List<Transform>();
     SpawnLocation location = evidenceSpawnLocations[evidenceIndex];
 
-    if (enableLocationSelection && isLocationDecided && currentLocation != CurrentLocation.Fallback)
+    if (isLocationDecided && currentLocation != CurrentLocation.Fallback)
     {
       Transform[] locationSpecificPoints = GetLocationSpecificSpawnPoints(location);
       if (locationSpecificPoints.Length > 0)

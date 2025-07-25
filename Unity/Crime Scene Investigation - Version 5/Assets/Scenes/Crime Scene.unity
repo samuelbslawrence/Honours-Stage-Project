@@ -26458,9 +26458,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e481d653e929b204e91aee6233fabb33, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  enableLocationSelection: 1
-  useRandomSelection: 1
-  forceLocationIndex: 0
+  useCustomSeed: 1
+  customSeed: 33
   barProbability: 0.333
   officeProbability: 0.333
   homeProbability: 0.332
@@ -27091,8 +27090,6 @@ MonoBehaviour:
   cameraScript: {fileID: 1824071521}
   autoFindCameraScript: 1
   notifyCameraOnGeneration: 1
-  useScenarioPresets: 0
-  selectedScenarioIndex: 0
 --- !u!4 &1357813087
 Transform:
   m_ObjectHideFlags: 0
