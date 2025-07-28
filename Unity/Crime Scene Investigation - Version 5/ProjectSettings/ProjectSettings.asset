@@ -13,7 +13,7 @@ PlayerSettings:
   useOnDemandResources: 0
   accelerometerFrequency: 60
   companyName: Samuel Lawrence
-  productName: Crime Scene Investigation
+  productName: Crime Scene Investigation v1.0
   defaultCursor: {fileID: 0}
   cursorHotspot: {x: 0, y: 0}
   m_SplashScreenBackgroundColor: {r: 0.13725491, g: 0.12156863, b: 0.1254902, a: 1}
@@ -146,8 +146,6 @@ PlayerSettings:
   preloadedAssets:
   - {fileID: 0}
   - {fileID: 11400000, guid: 4814ee17fedd59f49a290f37c9565cb1, type: 2}
-  - {fileID: 11400000, guid: 84cfd4be3d268da49a17fd596897d58c, type: 2}
-  - {fileID: -4249476550874710627, guid: beb8a450aab214f4ab19ec3a509c3374, type: 2}
   metroInputSource: 0
   wsaTransparentSwapchain: 0
   m_HolographicPauseOnTrackingLoss: 1
